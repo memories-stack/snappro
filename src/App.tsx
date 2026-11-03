@@ -54,8 +54,9 @@ interface CustomColorPreset {
 }
 
 type Lang = 'en' | 'th';
-type ToolTab = 'basic' | 'mixer' | 'grading' | 'watermark';
+type ToolTab = 'basic' | 'mixer' | 'grading';
 type HSLMode = 'hue' | 'sat' | 'lum';
+export type DuplicateMode = 'skip' | 'overwrite' | 'rename';
 
 const ANCHOR_GRID: WatermarkAnchor[] = [
   'tl', 'tc', 'tr',
@@ -103,11 +104,18 @@ const I18N = {
     doneMsg: 'Done! Sharp:',
     filteredBlur: 'Skipped:',
     savedTo: 'Saved:',
+    skippedDuplicates: 'Skipped:',
+    duplicateFiles: 'Existing Files',
+    dupSkip: '⏭ Skip (Do not re-save)',
+    dupOverwrite: '덮 Overwrite existing',
+    dupRename: '🔢 Auto-Rename (1, 2)',
     filesUnit: 'files',
     readyEmpty: 'Drop videos ➔ Adjust settings on the right ➔ Select folder & Start',
     readySummary: (vCount: number, fCount: number, intv: number) =>
       `Ready: ${vCount} clip(s) (~${fCount} frames) • Every ${intv}s`,
     stopBtn: '⏹ Stop',
+    pauseBtn: '⏸ Pause',
+    resumeBtn: '▶ Resume',
     startBtn: '🚀 Start',
     histogram: 'HISTOGRAM',
     captureSettings: 'CAPTURE SETTINGS',
@@ -169,11 +177,18 @@ const I18N = {
     doneMsg: 'เสร็จสิ้น! ภาพชัด:',
     filteredBlur: 'คัดออก:',
     savedTo: 'บันทึกแล้ว:',
+    skippedDuplicates: 'ข้ามไฟล์เดิม:',
+    duplicateFiles: 'ไฟล์ที่มีอยู่แล้ว',
+    dupSkip: '⏭ ข้ามไฟล์เดิม (ไม่เซฟซ้ำ)',
+    dupOverwrite: '덮 เขียนทับไฟล์เดิม',
+    dupRename: '🔢 เปลี่ยนชื่ออัตโนมัติ (1, 2)',
     filesUnit: 'ไฟล์',
     readyEmpty: 'เลือกวิดีโอ ➔ ตั้งค่าแถบขวา ➔ เลือกโฟลเดอร์แล้วกด Start',
     readySummary: (vCount: number, fCount: number, intv: number) =>
       `พร้อม: ${vCount} คลิป (~${fCount} ภาพ) • แคปทุก ${intv} วิ`,
-    stopBtn: '⏹ หยุด',
+    stopBtn: '⏹ ยกเลิก',
+    pauseBtn: '⏸ พักชั่วคราว',
+    resumeBtn: '▶ ทำงานต่อ',
     startBtn: '🚀 เริ่ม',
     histogram: 'ฮิสโตแกรม (HISTOGRAM)',
     captureSettings: 'ตั้งค่าการแคป (CAPTURE)',
@@ -274,7 +289,7 @@ const ENHANCE_MODELS = [
 function ColorWheelControl({
   title,
   value,
-  size = 80,
+  size = 56,
   onChange,
   onReset,
 }: {
@@ -358,10 +373,10 @@ function HistogramGraph({ data }: { data: HistogramData | null }) {
   const buildPath = (arr: number[]) => {
     if (!arr || arr.length === 0) return '';
     const w = 300;
-    const h = 92;
+    const h = 60;
     const pts = arr.map((v, i) => {
       const x = (i / (arr.length - 1)) * w;
-      const y = h - Math.min(1, v) * (h - 6);
+      const y = h - Math.min(1, v) * (h - 4);
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     });
     return `M0,${h} L${pts.join(' L')} L${w},${h} Z`;
@@ -370,10 +385,10 @@ function HistogramGraph({ data }: { data: HistogramData | null }) {
   return (
     <div className="histogram-box">
       {data ? (
-        <svg viewBox="0 0 300 92" className="histogram-svg" preserveAspectRatio="none">
-          <line x1="75" y1="0" x2="75" y2="92" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-          <line x1="150" y1="0" x2="150" y2="92" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-          <line x1="225" y1="0" x2="225" y2="92" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+        <svg viewBox="0 0 300 60" className="histogram-svg" preserveAspectRatio="none">
+          <line x1="75" y1="0" x2="75" y2="60" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+          <line x1="150" y1="0" x2="150" y2="60" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+          <line x1="225" y1="0" x2="225" y2="60" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
           <path d={buildPath(data.lum)} fill="rgba(255,255,255,0.24)" />
           <path d={buildPath(data.r)} fill="rgba(239,68,68,0.5)" style={{ mixBlendMode: 'screen' }} />
           <path d={buildPath(data.g)} fill="rgba(34,197,94,0.5)" style={{ mixBlendMode: 'screen' }} />
@@ -389,6 +404,52 @@ function HistogramGraph({ data }: { data: HistogramData | null }) {
 let _id = 0;
 const uid = () => `v-${Date.now()}-${++_id}`;
 const fmtSize = (b: number) => b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`;
+
+// Background Audio Keep-Alive
+// macOS App Nap & WebKit media occlusion throttler suspends canvas/timer decode when minimized.
+// Playing inaudible sound marks the WebContent process as an active media session,
+// preventing throttling and maintaining 100% processing throughput even when minimized to the Dock.
+let keepAliveAudioCtx: AudioContext | null = null;
+let keepAliveOsc: OscillatorNode | null = null;
+
+function startKeepAliveEngine() {
+  try {
+    if (!keepAliveAudioCtx) {
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (AudioCtx) {
+        keepAliveAudioCtx = new AudioCtx();
+        const osc = keepAliveAudioCtx.createOscillator();
+        const gain = keepAliveAudioCtx.createGain();
+        gain.gain.value = 0.00001; // completely inaudible
+        osc.connect(gain);
+        gain.connect(keepAliveAudioCtx.destination);
+        osc.start();
+        keepAliveOsc = osc;
+        if (keepAliveAudioCtx.state === 'suspended') {
+          keepAliveAudioCtx.resume();
+        }
+      }
+    } else if (keepAliveAudioCtx.state === 'suspended') {
+      keepAliveAudioCtx.resume();
+    }
+  } catch (e) {
+    console.warn('Keep-alive engine init error:', e);
+  }
+}
+
+function stopKeepAliveEngine() {
+  try {
+    if (keepAliveOsc) {
+      keepAliveOsc.stop();
+      keepAliveOsc.disconnect();
+      keepAliveOsc = null;
+    }
+    if (keepAliveAudioCtx) {
+      keepAliveAudioCtx.close();
+      keepAliveAudioCtx = null;
+    }
+  } catch {}
+}
 
 export default function App() {
   const savedInit = useRef<Record<string, any>>(loadSavedStudioSettings()).current;
@@ -446,6 +507,9 @@ export default function App() {
   const [keepAspect] = useState(true);
   const [interval, setInterval_] = useState<number>(() => savedInit.interval ?? 1);
   const [speedConcurrency, setSpeedConcurrency] = useState<1 | 2 | 4>(() => savedInit.speedConcurrency || 2);
+  const [duplicateMode, setDuplicateMode] = useState<DuplicateMode>(
+    () => savedInit.duplicateMode || 'skip'
+  );
 
   // Smart AI Capture Features (Best-Shot Search & Motion Trigger)
   const [filterBlur, setFilterBlur] = useState<boolean>(() => savedInit.filterBlur ?? true);
@@ -478,6 +542,14 @@ export default function App() {
     () => savedInit.colorGrading || createDefaultColorGrading()
   );
 
+  // Collapsible studio sidebar sections
+  const [isHistogramOpen, setIsHistogramOpen] = useState(true);
+  const [isCaptureOpen, setIsCaptureOpen] = useState(true);
+  const [isColorToolsOpen, setIsColorToolsOpen] = useState(true);
+  const [isWatermarkOpen, setIsWatermarkOpen] = useState<boolean>(() =>
+    savedInit.isWatermarkOpen !== undefined ? savedInit.isWatermarkOpen : false
+  );
+
   // Persist Studio Settings to localStorage so Auto-Refresh never loses user's configuration
   useEffect(() => {
     try {
@@ -501,6 +573,7 @@ export default function App() {
           maximizeCompatibility,
           interval,
           speedConcurrency,
+          duplicateMode,
           filterBlur,
           sharpnessThreshold,
           smartBestShot,
@@ -516,6 +589,7 @@ export default function App() {
           denoise,
           colorMixer,
           colorGrading,
+          isWatermarkOpen,
         })
       );
     } catch {
@@ -539,6 +613,7 @@ export default function App() {
     maximizeCompatibility,
     interval,
     speedConcurrency,
+    duplicateMode,
     filterBlur,
     sharpnessThreshold,
     smartBestShot,
@@ -554,6 +629,7 @@ export default function App() {
     denoise,
     colorMixer,
     colorGrading,
+    isWatermarkOpen,
   ]);
 
   // Custom Color Presets (persisted in localStorage)
@@ -574,10 +650,12 @@ export default function App() {
 
   // Working State
   const [isWorking, setIsWorking] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [isDone, setIsDone] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState('');
   const [savedCount, setSavedCount] = useState(0);
+  const [skippedDuplicates, setSkippedDuplicates] = useState(0);
   const [liveSharpCount, setLiveSharpCount] = useState(0);
   const [, setTotalScanned] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -597,13 +675,11 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef({ aborted: false });
+  const pauseRef = useRef({ paused: false });
   const startTimeRef = useRef(0);
+  const pauseStartRef = useRef(0);
+  const pausedAccumRef = useRef(0);
   const timerRef = useRef<number | null>(null);
-
-  // Collapsible studio sidebar sections
-  const [isHistogramOpen, setIsHistogramOpen] = useState(true);
-  const [isCaptureOpen, setIsCaptureOpen] = useState(true);
-  const [isColorToolsOpen, setIsColorToolsOpen] = useState(true);
 
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0];
   const totalFrames = videos.reduce((sum, v) => sum + v.frames.length, 0);
@@ -685,7 +761,7 @@ export default function App() {
     img.onload = () => {
       setWatermark(prev => ({ ...prev, image: img }));
       setWatermarkName(file.name);
-      setToolTab('watermark');
+      setIsWatermarkOpen(true);
     };
     img.src = url;
     e.target.value = '';
@@ -741,19 +817,45 @@ export default function App() {
     } catch { /* ignore */ }
   };
 
-  // Timer
+  // Timer & Pause Controls
   const startTimer = () => {
     startTimeRef.current = Date.now();
+    pausedAccumRef.current = 0;
+    pauseStartRef.current = 0;
     setElapsedTime(0);
+    if (timerRef.current !== null) {
+      clearInterval(timerRef.current);
+    }
     timerRef.current = window.setInterval(() => {
-      setElapsedTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
-    }, 1000);
+      if (!pauseRef.current.paused) {
+        const totalPaused = pausedAccumRef.current + (pauseStartRef.current > 0 ? (Date.now() - pauseStartRef.current) : 0);
+        setElapsedTime(Math.max(0, Math.floor((Date.now() - startTimeRef.current - totalPaused) / 1000)));
+      }
+    }, 500);
   };
 
   const stopTimer = () => {
     if (timerRef.current !== null) {
       clearInterval(timerRef.current);
       timerRef.current = null;
+    }
+  };
+
+  const togglePause = () => {
+    if (!isWorking) return;
+    if (!pauseRef.current.paused) {
+      // Pause work
+      pauseRef.current.paused = true;
+      pauseStartRef.current = Date.now();
+      setIsPaused(true);
+    } else {
+      // Resume work
+      if (pauseStartRef.current > 0) {
+        pausedAccumRef.current += (Date.now() - pauseStartRef.current);
+        pauseStartRef.current = 0;
+      }
+      pauseRef.current.paused = false;
+      setIsPaused(false);
     }
   };
 
@@ -904,8 +1006,6 @@ export default function App() {
       setColorMixer(createDefaultColorMixer());
     } else if (toolTab === 'grading') {
       setColorGrading(createDefaultColorGrading());
-    } else {
-      setWatermark(prev => ({ ...createDefaultWatermarkSettings(), image: prev.image }));
     }
   };
 
@@ -947,26 +1047,76 @@ export default function App() {
     }
     const fakeHandle: any = {
       name: data.name,
-      getFileHandle: async (fileName: string) => ({
-        createWritable: async () => {
-          let pendingBlob: Blob | null = null;
-          return {
-            write: async (b: Blob) => {
-              pendingBlob = b;
-            },
-            close: async () => {
-              if (pendingBlob) {
-                await fetch(`/__save_file?name=${encodeURIComponent(fileName)}`, {
-                  method: 'POST',
-                  body: pendingBlob,
-                });
-              }
-            },
-          };
-        },
-      }),
+      getFileHandle: async (fileName: string, opts?: { create?: boolean }) => {
+        if (opts && opts.create === false) {
+          const res = await fetch(`/__file_exists?name=${encodeURIComponent(fileName)}`, { cache: 'no-store' });
+          const chk = await res.json();
+          if (!chk.exists) {
+            const err = new Error('NotFoundError');
+            err.name = 'NotFoundError';
+            throw err;
+          }
+        }
+        return {
+          createWritable: async () => {
+            let pendingBlob: Blob | null = null;
+            return {
+              write: async (b: Blob) => {
+                pendingBlob = b;
+              },
+              close: async () => {
+                if (pendingBlob) {
+                  await fetch(`/__save_file?name=${encodeURIComponent(fileName)}`, {
+                    method: 'POST',
+                    body: pendingBlob,
+                  });
+                }
+              },
+            };
+          },
+        };
+      },
+      listExistingFiles: async (): Promise<string[]> => {
+        try {
+          const res = await fetch(`/__list_files?t=${Date.now()}`, { cache: 'no-store' });
+          const dat = await res.json();
+          return dat.files || [];
+        } catch {
+          return [];
+        }
+      },
     };
     return fakeHandle as FileSystemDirectoryHandle;
+  };
+
+  // Helper: Retrieve all existing filenames in destination folder for O(1) duplicate checks
+  const getExistingFileNames = async (dirHandle: FileSystemDirectoryHandle | null): Promise<Set<string>> => {
+    const set = new Set<string>();
+    if (!dirHandle) return set;
+    try {
+      if (typeof (dirHandle as any).listExistingFiles === 'function') {
+        const files: string[] = await (dirHandle as any).listExistingFiles();
+        for (const f of files) set.add(f);
+        return set;
+      }
+      // Chrome / Edge / Electron FileSystemDirectoryHandle async iterator
+      // @ts-ignore
+      if (typeof dirHandle.keys === 'function') {
+        // @ts-ignore
+        for await (const name of dirHandle.keys()) {
+          set.add(name);
+        }
+      } else if (typeof (dirHandle as any).values === 'function') {
+        for await (const entry of (dirHandle as any).values()) {
+          if (entry.kind === 'file') {
+            set.add(entry.name);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Could not list directory files:', err);
+    }
+    return set;
   };
 
   // Select Folder
@@ -986,18 +1136,42 @@ export default function App() {
     dirHandle: FileSystemDirectoryHandle | null,
     frame: CapturedFrame,
     idx: number,
-    videoName: string
+    videoName: string,
+    existingFilesSet: Set<string>,
+    mode: DuplicateMode
   ) => {
     if (!dirHandle) return;
     try {
       const ext = format === 'png' ? 'png' : format === 'webp' ? 'webp' : 'jpg';
       const prefix = videoName.replace(/\.[^.]+$/, '');
-      const fn = `${prefix}_${String(idx + 1).padStart(4, '0')}_${formatTimestamp(frame.timestamp)}_${frame.width}x${frame.height}.${ext}`;
+      const baseFn = `${prefix}_${String(idx + 1).padStart(4, '0')}_${formatTimestamp(frame.timestamp)}_${frame.width}x${frame.height}`;
+      let fn = `${baseFn}.${ext}`;
+
+      const exists = existingFilesSet.has(fn);
+
+      if (exists) {
+        if (mode === 'skip') {
+          setSkippedDuplicates(c => c + 1);
+          return;
+        }
+        if (mode === 'rename') {
+          let count = 1;
+          let candidate = `${baseFn} (${count}).${ext}`;
+          while (existingFilesSet.has(candidate)) {
+            count++;
+            candidate = `${baseFn} (${count}).${ext}`;
+          }
+          fn = candidate;
+        }
+        // mode === 'overwrite' proceeds with standard fn
+      }
+
       const fh = await dirHandle.getFileHandle(fn, { create: true });
       const w = await (fh as any).createWritable();
       const blobToWrite = frame.blob || dataUrlToBlob(frame.dataUrl, pixelDensity, densityUnit);
       await w.write(blobToWrite);
       await w.close();
+      existingFilesSet.add(fn);
       setSavedCount(c => c + 1);
     } catch { /* skip */ }
   };
@@ -1022,13 +1196,20 @@ export default function App() {
     }
 
     setIsWorking(true);
+    setIsPaused(false);
+    pauseRef.current = { paused: false };
     setIsDone(false);
     setProgress(0);
     setSavedCount(0);
+    setSkippedDuplicates(0);
     setLiveSharpCount(0);
     setTotalScanned(0);
     abortRef.current = { aborted: false };
+    startKeepAliveEngine();
     startTimer();
+
+    // Pre-load existing filenames in destination folder once for instant O(1) duplicate checks
+    const existingFilesSet = await getExistingFileNames(targetDirHandle);
 
     setVideos(prev => prev.map(v => ({ ...v, frames: [], sharpFrames: 0, blurFrames: 0, status: 'queued' as const })));
 
@@ -1054,6 +1235,11 @@ export default function App() {
 
       try {
         while (!abortRef.current.aborted) {
+          while (pauseRef.current.paused && !abortRef.current.aborted) {
+            await new Promise(r => setTimeout(r, 150));
+          }
+          if (abortRef.current.aborted) break;
+
           const vi = nextClipIdx++;
           if (vi >= total) break;
           const item = videos[vi];
@@ -1124,7 +1310,16 @@ export default function App() {
               globalScanned++;
 
               if (targetDirHandle) {
-                pendingSaves.push(saveFrameToHandle(targetDirHandle, frame, sharpCount - 1, item.name));
+                pendingSaves.push(
+                  saveFrameToHandle(
+                    targetDirHandle,
+                    frame,
+                    sharpCount - 1,
+                    item.name,
+                    existingFilesSet,
+                    duplicateMode
+                  )
+                );
                 if (pendingSaves.length >= 6) {
                   await Promise.all(pendingSaves);
                   pendingSaves.length = 0;
@@ -1132,7 +1327,7 @@ export default function App() {
               } else if (videos.length <= 20) {
                 clipFrames.push(frame);
               } else {
-                saveFrameToHandle(null, frame, sharpCount - 1, item.name);
+                saveFrameToHandle(null, frame, sharpCount - 1, item.name, existingFilesSet, duplicateMode);
               }
 
               const now = performance.now();
@@ -1149,7 +1344,8 @@ export default function App() {
             threshold,
             () => {
               globalScanned++;
-            }
+            },
+            pauseRef.current
           );
 
           if (pendingSaves.length > 0) {
@@ -1193,8 +1389,11 @@ export default function App() {
 
     await Promise.all(Array.from({ length: workerCount }, (_, idx) => runWorker(idx)));
 
+    stopKeepAliveEngine();
     stopTimer();
     setIsWorking(false);
+    setIsPaused(false);
+    pauseRef.current = { paused: false };
     setIsDone(true);
     setProgress(100);
     setProgressText(abortRef.current.aborted ? 'Stopped' : 'Done!');
@@ -1202,6 +1401,9 @@ export default function App() {
 
   const stopWork = () => {
     abortRef.current.aborted = true;
+    pauseRef.current.paused = false;
+    setIsPaused(false);
+    stopKeepAliveEngine();
     stopTimer();
     setIsWorking(false);
     setIsDone(true);
@@ -1609,14 +1811,24 @@ export default function App() {
               {isWorking ? (
                 <div className="working-inline">
                   <div className="working-inline-top">
-                    <span className="truncate-text">{progressText}</span>
+                    <span className="truncate-text" style={{ color: isPaused ? '#fcd34d' : undefined, fontWeight: isPaused ? 600 : undefined }}>
+                      {isPaused ? (lang === 'th' ? '⏸ [หยุดพักชั่วคราว] พักเครื่องชั่วคราว — กด "ทำงานต่อ" ได้ตลอดเวลา' : '⏸ [PAUSED] Processing paused — Click Resume anytime') : progressText}
+                    </span>
                     <span>
                       {Math.round(progress)}% • 📸 {totalSharp}
-                      {saveDirHandle && ` • 💾 ${savedCount}`} • ⏱ {formatElapsed(elapsedTime)}
+                      {saveDirHandle && ` • 💾 ${savedCount}`}
+                      {skippedDuplicates > 0 && ` • ⏭ ${lang === 'th' ? 'ข้าม' : 'Skip'} ${skippedDuplicates}`}
+                      {` • ⏱ ${formatElapsed(elapsedTime)}`}
                     </span>
                   </div>
                   <div className="progress-bar" style={{ height: 5, margin: 0 }}>
-                    <div className="progress-bar-fill" style={{ width: `${progress}%` }} />
+                    <div
+                      className="progress-bar-fill"
+                      style={{
+                        width: `${progress}%`,
+                        background: isPaused ? 'linear-gradient(90deg, #f59e0b, #fbbf24)' : undefined,
+                      }}
+                    />
                   </div>
                 </div>
               ) : isDone ? (
@@ -1624,6 +1836,7 @@ export default function App() {
                   ✅ <strong>{t.doneMsg} {totalSharp}</strong>
                   {totalBlur > 0 && ` (${t.filteredBlur} ${totalBlur})`}
                   {savedCount > 0 && ` • ${t.savedTo} 📂 ${saveDirName} (${savedCount} ${t.filesUnit})`}
+                  {skippedDuplicates > 0 && ` • ⏭ ${t.skippedDuplicates} ${skippedDuplicates} ${t.filesUnit}`}
                   {` • ⏱ ${formatElapsed(elapsedTime)}`}
                 </div>
               ) : (
@@ -1636,9 +1849,19 @@ export default function App() {
             </div>
 
             {isWorking ? (
-              <button className="start-btn-compact stop-mode" onClick={stopWork}>
-                {t.stopBtn}
-              </button>
+              <div className="bottom-actions-group">
+                <button
+                  type="button"
+                  className={`start-btn-compact ${isPaused ? 'resume-mode' : 'pause-mode'}`}
+                  onClick={togglePause}
+                  title={isPaused ? (lang === 'th' ? 'คลิกเพื่อทำงานต่อ' : 'Resume processing') : (lang === 'th' ? 'พักเครื่องชั่วคราว' : 'Pause processing')}
+                >
+                  {isPaused ? t.resumeBtn : t.pauseBtn}
+                </button>
+                <button type="button" className="start-btn-compact stop-mode" onClick={stopWork}>
+                  {t.stopBtn}
+                </button>
+              </div>
             ) : (
               <div className="bottom-actions-group">
                 {isDone && totalFrames > 0 && !saveDirHandle && (
@@ -1706,7 +1929,7 @@ export default function App() {
               {!isCaptureOpen && (
                 <span className="panel-collapsed-badge">
                   {interval}s • {sizeMode === 'original' ? 'Orig' : `${outputWidth}×${outputHeight}`} • {pixelDensity}{densityUnit.toUpperCase()}
-                  {limitFileSize && format !== 'png' ? ` • ≤${maxFileSizeKb.toLocaleString()}K` : ''}
+                  {duplicateMode === 'skip' ? ' • Skip Dup' : duplicateMode === 'rename' ? ' • Auto-Rename' : ' • Overwrite'}
                 </span>
               )}
             </div>
@@ -1982,6 +2205,20 @@ export default function App() {
                   </span>
                 </div>
 
+                <div className="lr-fs-row">
+                  <span className="lr-fs-label">{t.duplicateFiles}:</span>
+                  <select
+                    className="compact-select"
+                    style={{ flex: 1 }}
+                    value={duplicateMode}
+                    onChange={e => setDuplicateMode(e.target.value as DuplicateMode)}
+                  >
+                    <option value="skip">{t.dupSkip}</option>
+                    <option value="overwrite">{t.dupOverwrite}</option>
+                    <option value="rename">{t.dupRename}</option>
+                  </select>
+                </div>
+
                 <div className="lr-fs-checks-row">
                   <label className="compact-check" style={{ fontSize: 10.5 }}>
                     <input
@@ -2001,69 +2238,24 @@ export default function App() {
                   </label>
                 </div>
               </div>
-
-              {/* Row 7: Auto Watermark / Logo Overlay Quick Trigger */}
-              <div className="cap-row">
-                <span className="cap-lbl" style={{ width: 62 }}>{t.watermark}</span>
-                {!watermark.image ? (
-                  <button
-                    type="button"
-                    className="mini-pill"
-                    style={{ flex: 1, textAlign: 'center', padding: '3px 6px' }}
-                    onClick={() => logoInputRef.current?.click()}
-                  >
-                    {t.addLogo}
-                  </button>
-                ) : (
-                  <div className="watermark-controls-inline">
-                    <button
-                      type="button"
-                      className="mini-pill active"
-                      style={{ flex: 1 }}
-                      onClick={() => setToolTab('watermark')}
-                      title={watermarkName}
-                    >
-                      🏷️ {watermarkName.slice(0, 14)} • {watermark.anchor.toUpperCase()} ({watermark.scale}%)
-                    </button>
-                    <button
-                      type="button"
-                      className="mini-pill"
-                      onClick={() => logoInputRef.current?.click()}
-                    >
-                      {t.changeLogo}
-                    </button>
-                    <button
-                      type="button"
-                      className="chip-close"
-                      onClick={() => {
-                        setWatermark(prev => ({ ...prev, image: null }));
-                        setWatermarkName('');
-                      }}
-                      title="Remove watermark"
-                    >
-                      ×
-                    </button>
-                  </div>
-                )}
-              </div>
             </div>
             )}
           </div>
 
-          {/* SECTION 3: Tabbed Color, Detail & Watermark Tools (Basic | HSL | Grading | Logo) */}
+                              {/* SECTION 3: Tabbed Color & Detail Tools (Basic | HSL | Grading) */}
           <div className={`panel-section sidebar-color-section ${!isColorToolsOpen ? 'collapsed' : ''}`}>
             <div
               className="panel-header-line clickable"
               onClick={() => setIsColorToolsOpen(v => !v)}
-              style={{ marginBottom: isColorToolsOpen ? 6 : 0 }}
+              style={{ marginBottom: isColorToolsOpen ? 4 : 0 }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span className="collapse-arrow">{isColorToolsOpen ? '▼' : '▶'}</span>
-                <span className="panel-title">{lang === 'th' ? 'ปรับแต่งสีและลายน้ำ' : 'Color Grading & Details'}</span>
+                <span className="panel-title">{lang === 'th' ? 'การปรับแต่งสี (Color Grading)' : 'Color Grading & Details'}</span>
               </div>
               {!isColorToolsOpen && (
                 <span className="panel-collapsed-badge">
-                  {toolTab.toUpperCase()}{watermark.image ? ' • 🏷️ Logo' : ''}
+                  {toolTab.toUpperCase()}
                 </span>
               )}
             </div>
@@ -2071,34 +2263,28 @@ export default function App() {
             {isColorToolsOpen && (
               <>
                 <div className="tool-tabs-bar">
-              <button
-                className={`tool-tab-btn ${toolTab === 'basic' ? 'active' : ''}`}
-                onClick={() => setToolTab('basic')}
-              >
-                {t.tabBasic}
-              </button>
-              <button
-                className={`tool-tab-btn ${toolTab === 'mixer' ? 'active' : ''}`}
-                onClick={() => setToolTab('mixer')}
-              >
-                {t.tabMixer}
-              </button>
-              <button
-                className={`tool-tab-btn ${toolTab === 'grading' ? 'active' : ''}`}
-                onClick={() => setToolTab('grading')}
-              >
-                {t.tabGrading}
-              </button>
-              <button
-                className={`tool-tab-btn ${toolTab === 'watermark' ? 'active' : ''}`}
-                onClick={() => setToolTab('watermark')}
-              >
-                {t.tabWatermark}
-              </button>
-              <button className="reset-link" onClick={resetCurrentTab} title="Reset current tab">
-                {t.reset}
-              </button>
-            </div>
+                  <button
+                    className={`tool-tab-btn ${toolTab === 'basic' ? 'active' : ''}`}
+                    onClick={() => setToolTab('basic')}
+                  >
+                    {t.tabBasic}
+                  </button>
+                  <button
+                    className={`tool-tab-btn ${toolTab === 'mixer' ? 'active' : ''}`}
+                    onClick={() => setToolTab('mixer')}
+                  >
+                    {t.tabMixer}
+                  </button>
+                  <button
+                    className={`tool-tab-btn ${toolTab === 'grading' ? 'active' : ''}`}
+                    onClick={() => setToolTab('grading')}
+                  >
+                    {t.tabGrading}
+                  </button>
+                  <button className="reset-link" onClick={resetCurrentTab} title="Reset current tab">
+                    {t.reset}
+                  </button>
+                </div>
 
             {/* ---------- TAB 1: BASIC & DETAIL + CUSTOM PRESETS ---------- */}
             {toolTab === 'basic' && (
@@ -2274,7 +2460,7 @@ export default function App() {
                   <ColorWheelControl
                     title={t.wheelMidtones}
                     value={colorGrading.midtones}
-                    size={80}
+                    size={56}
                     onChange={midtones => setColorGrading(p => ({ ...p, midtones }))}
                     onReset={() => setColorGrading(p => ({ ...p, midtones: { hue: 40, sat: 0, lum: 0 } }))}
                   />
@@ -2285,14 +2471,14 @@ export default function App() {
                   <ColorWheelControl
                     title={t.wheelShadows}
                     value={colorGrading.shadows}
-                    size={80}
+                    size={56}
                     onChange={shadows => setColorGrading(p => ({ ...p, shadows }))}
                     onReset={() => setColorGrading(p => ({ ...p, shadows: { hue: 210, sat: 0, lum: 0 } }))}
                   />
                   <ColorWheelControl
                     title={t.wheelHighlights}
                     value={colorGrading.highlights}
-                    size={80}
+                    size={56}
                     onChange={highlights => setColorGrading(p => ({ ...p, highlights }))}
                     onReset={() => setColorGrading(p => ({ ...p, highlights: { hue: 45, sat: 0, lum: 0 } }))}
                   />
@@ -2333,8 +2519,42 @@ export default function App() {
               </div>
             )}
 
-            {/* ---------- TAB 4: PHOTOSCAPE X PRO WATERMARK INSPECTOR ---------- */}
-            {toolTab === 'watermark' && (
+              </>
+            )}
+          </div>
+
+          {/* SECTION 4: Dedicated Watermark & Logo Branding Panel */}
+          <div className={`panel-section ${!isWatermarkOpen ? 'collapsed' : ''}`}>
+            <div
+              className="panel-header-line clickable"
+              onClick={() => setIsWatermarkOpen(v => !v)}
+              style={{ marginBottom: isWatermarkOpen ? 3 : 0 }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="collapse-arrow">{isWatermarkOpen ? '▼' : '▶'}</span>
+                <span className="panel-title">{lang === 'th' ? 'ลายน้ำและโลโก้' : 'Watermark & Logo'}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                {watermark.image ? (
+                  <span
+                    className="panel-collapsed-badge"
+                    style={{
+                      color: '#6ee7b7',
+                      borderColor: 'rgba(16, 185, 129, 0.45)',
+                      background: 'rgba(16, 185, 129, 0.12)',
+                    }}
+                  >
+                    🟢 🏷️ {watermarkName ? watermarkName.slice(0, 10) : 'Logo'} • {watermark.anchor.toUpperCase()} ({watermark.scale}%)
+                  </span>
+                ) : (
+                  <span className="panel-collapsed-badge">
+                    {lang === 'th' ? 'ปิดอยู่' : 'Off'}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {isWatermarkOpen && (
               <div className="tab-card psx-watermark-panel">
                 {/* 1. Top Action Bar (Delete, Upload, Flip, Rotate CCW, Rotate CW, Reset) */}
                 <div className="psx-top-actions">
@@ -2721,9 +2941,8 @@ export default function App() {
                 </div>
               </div>
             )}
-              </>
-            )}
           </div>
+
         </aside>
       </div>
     </div>

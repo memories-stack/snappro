@@ -1385,7 +1385,8 @@ export async function autoCapture(
   onDone: () => void,
   abortSignal?: { aborted: boolean },
   sharpnessThreshold: number = 0,
-  onScanFrame?: () => void
+  onScanFrame?: () => void,
+  pauseSignal?: { paused: boolean }
 ): Promise<void> {
   const duration = endTime - startTime;
   const totalFrames = Math.floor(duration / intervalSec) + 1;
@@ -1400,12 +1401,20 @@ export async function autoCapture(
   const adaptiveQualityState = { q: Math.min(settings.quality ?? 0.95, 0.86) };
 
   for (let i = 0; i < totalFrames; i++) {
+    while (pauseSignal?.paused && !abortSignal?.aborted) {
+      await new Promise(r => setTimeout(r, 150));
+    }
     if (abortSignal?.aborted) break;
 
     const targetTime = startTime + i * intervalSec;
     if (targetTime > endTime) break;
 
     await seekVideoTo(video, targetTime);
+
+    while (pauseSignal?.paused && !abortSignal?.aborted) {
+      await new Promise(r => setTimeout(r, 150));
+    }
+    if (abortSignal?.aborted) break;
 
     let bestAnalysis = analyzeFrameSharpnessAndGray(video, origW, origH);
     let bestTime = targetTime;
@@ -1416,6 +1425,9 @@ export async function autoCapture(
       const offsets = [maxDelta * 0.5, maxDelta];
 
       for (const off of offsets) {
+        while (pauseSignal?.paused && !abortSignal?.aborted) {
+          await new Promise(r => setTimeout(r, 150));
+        }
         if (abortSignal?.aborted) break;
         const probeTime = Math.min(endTime, targetTime + off);
         if (probeTime - targetTime < 0.02) continue;
