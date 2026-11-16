@@ -1231,12 +1231,18 @@ export default function App() {
   const [duplicateMode, setDuplicateMode] = useState<DuplicateMode>(
     () => savedInit.duplicateMode || 'skip'
   );
-  const [cropAspect, setCropAspect] = useState<CropAspect>(() => savedInit.cropAspect || 'none');
+  const [cropAspect, setCropAspect] = useState<CropAspect>(() => {
+    const matchedOpt = SIZE_OPTIONS.find(o => o.id === savedInit.sizeMode);
+    if (matchedOpt && (matchedOpt as any).crop) {
+      return (matchedOpt as any).crop;
+    }
+    return savedInit.cropAspect || '3:2';
+  });
   const [cropComposition, setCropComposition] = useState<CropComposition>(
     () => savedInit.cropComposition || 'face'
   );
   const [skipOverflowCrop, setSkipOverflowCrop] = useState<boolean>(
-    () => savedInit.skipOverflowCrop ?? true
+    () => savedInit.skipOverflowCropV2 ?? false
   );
 
   // Smart AI Capture Features (Best-Shot Search & Motion Trigger)
@@ -1305,6 +1311,7 @@ export default function App() {
           cropAspect,
           cropComposition,
           skipOverflowCrop,
+          skipOverflowCropV2: skipOverflowCrop,
           filterBlur,
           sharpnessThreshold,
           smartBestShot,
@@ -2175,8 +2182,16 @@ export default function App() {
             continue;
           }
 
-          const targetW = sizeMode === 'original' ? vw : outputWidth;
-          const targetH = sizeMode === 'original' ? vh : outputHeight;
+          const isClipPortrait = vh > vw;
+          let targetW = sizeMode === 'original' ? vw : outputWidth;
+          let targetH = sizeMode === 'original' ? vh : outputHeight;
+          if (sizeMode === 'crop-2-3-auto') {
+            targetW = isClipPortrait ? vw : Math.round(vh * (3 / 2));
+            targetH = isClipPortrait ? Math.round(vw / (2 / 3)) : vh;
+          } else if (sizeMode === 'crop-4-3-auto') {
+            targetW = isClipPortrait ? vw : Math.round(vh * (4 / 3));
+            targetH = isClipPortrait ? Math.round(vw / (3 / 4)) : vh;
+          }
           const settings = buildCurrentSettings(targetW, targetH);
 
           let sharpCount = 0;
@@ -2566,6 +2581,22 @@ export default function App() {
                   muted
                   onLoadedMetadata={e => {
                     const vid = e.currentTarget;
+                    const vw = vid.videoWidth;
+                    const vh = vid.videoHeight;
+                    const isPort = vh > vw;
+                    if (sizeMode === 'crop-2-3-auto' && vw > 0 && vh > 0) {
+                      setOutputWidth(isPort ? vw : Math.round(vh * 1.5));
+                      setOutputHeight(isPort ? Math.round(vw * 1.5) : vh);
+                    } else if (sizeMode === 'crop-4-3-auto' && vw > 0 && vh > 0) {
+                      setOutputWidth(isPort ? vw : Math.round(vh * (4 / 3)));
+                      setOutputHeight(isPort ? Math.round(vw / (3 / 4)) : vh);
+                    } else if (sizeMode === 'original' && vw > 0 && vh > 0) {
+                      setOutputWidth(vw);
+                      setOutputHeight(vh);
+                    } else if ((isPort && outputWidth > outputHeight) || (!isPort && outputHeight > outputWidth)) {
+                      setOutputWidth(outputHeight);
+                      setOutputHeight(outputWidth);
+                    }
                     if (activeVideo && !activeVideo.ready && vid.duration > 0) {
                       setVideos(prev =>
                         prev.map(v =>
@@ -2573,8 +2604,8 @@ export default function App() {
                             ? {
                                 ...v,
                                 duration: vid.duration,
-                                width: vid.videoWidth,
-                                height: vid.videoHeight,
+                                width: vw,
+                                height: vh,
                                 ready: true,
                               }
                             : v
@@ -2873,189 +2904,162 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Row 2: Output Size */}
-              <div className="cap-row">
-                <span className="cap-lbl">{t.size}</span>
-                <select
-                  className="compact-select"
-                  style={{ flex: 1, minWidth: 0 }}
-                  value={sizeMode}
-                  onChange={e => handleSizeChange(e.target.value)}
-                >
-                  {SIZE_OPTIONS.map(o => (
-                    <option key={o.id} value={o.id}>
-                      {o.labelKey ? t[o.labelKey] : o.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {sizeMode === 'custom' && (
-                <div className="cap-row">
-                  <span className="cap-lbl">W × H</span>
-                  <div className="custom-wh" style={{ flex: 1, justifyContent: 'flex-end' }}>
-                    <input
-                      type="number"
-                      className="mini-input"
-                      style={{ width: 64 }}
-                      value={outputWidth}
-                      onChange={e => setOutputWidth(Number(e.target.value) || 100)}
-                    />
-                    <span>×</span>
-                    <input
-                      type="number"
-                      className="mini-input"
-                      style={{ width: 64 }}
-                      value={outputHeight}
-                      onChange={e => setOutputHeight(Number(e.target.value) || 100)}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Row 2.5: Crop Aspect & AI Smart Composition (1:2 ส่วน / 2:3 ส่วน / ข้ามหากเกินอัตราส่วน) */}
+              {/* Row 2: Unified Simple Crop & Camera Size Menu (ใช้งานง่าย คลิกเดียวจบ) */}
               <div
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 6,
-                  padding: '7px 9px',
+                  gap: 7,
+                  padding: '8px 9px',
                   background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid rgba(255, 255, 255, 0.07)',
-                  borderRadius: 6,
+                  border: '1px solid rgba(56, 189, 248, 0.2)',
+                  borderRadius: 7,
                   margin: '4px 0',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span className="cap-lbl" style={{ margin: 0, fontWeight: 600 }}>อัตราส่วน Crop</span>
-                  <div className="mini-pills">
-                    {(['none', '3:2', '4:3', '1:1', '16:9'] as CropAspect[]).map(aspect => {
-                      const isActive =
-                        cropAspect === aspect || (aspect === '3:2' && cropAspect === '2:3');
-                      return (
-                        <button
-                          key={aspect}
-                          type="button"
-                          className={`mini-pill ${isActive ? 'active' : ''}`}
-                          onClick={() => handleCropAspectChange(aspect)}
-                        >
-                          {aspect === 'none'
-                            ? 'ไม่ Crop'
-                            : aspect === '3:2'
-                            ? '📷 3:2 (2:3)'
-                            : aspect}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {cropAspect !== 'none' && (
-                  <>
-                    <div
-                      style={{
-                        fontSize: '10.5px',
-                        color: '#10b981',
-                        background: 'rgba(16, 185, 129, 0.1)',
-                        border: '1px solid rgba(16, 185, 129, 0.25)',
-                        borderRadius: 4,
-                        padding: '4px 7px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <span>🤖 AI วัดส่วนที่เหลือจากหัว/ผมขึ้นไป ➔ ปรับตามสัดส่วนอัตโนมัติ</span>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 2 }}>
-                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>โหมด AI</span>
-                      <div className="mini-pills">
-                        <button
-                          type="button"
-                          className={`mini-pill ${cropComposition === 'face' ? 'active' : ''}`}
-                          onClick={() => {
-                            setCropComposition('face');
-                            setCustomCrop(null);
-                          }}
-                          title="AI วัดจากปลายผม/หมวก/ศีรษะขึ้นไปหาขอบบน แล้วเว้นระยะอัตโนมัติ (หัวไม่ขาด 100%)"
-                        >
-                          👤 วัดหัว/ผมเป็นหลัก
-                        </button>
-                        <button
-                          type="button"
-                          className={`mini-pill ${cropComposition === '1:2' ? 'active' : ''}`}
-                          onClick={() => {
-                            setCropComposition('1:2');
-                            setCustomCrop(null);
-                          }}
-                          title="AI จัดตัวแบบคนยืนเต็มตัวให้อยู่กึ่งกลาง 50% (1:2 ส่วน)"
-                        >
-                          🧍 คนกึ่งกลาง
-                        </button>
-                        <button
-                          type="button"
-                          className={`mini-pill ${cropComposition === '2:3' ? 'active' : ''}`}
-                          onClick={() => {
-                            setCropComposition('2:3');
-                            setCustomCrop(null);
-                          }}
-                          title="จัดองค์ประกอบตัวแบบตามส่วน 2:3 (จุดตัดเก้าช่อง Rule of Thirds)"
-                        >
-                          📐 2:3 ส่วน
-                        </button>
-                      </div>
-                    </div>
-
-                    <label
-                      className="compact-check"
-                      style={{
-                        margin: 0,
-                        paddingTop: 3,
-                        cursor: 'pointer',
-                        fontSize: '11px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={skipOverflowCrop}
-                        onChange={e => setSkipOverflowCrop(e.target.checked)}
-                      />
-                      <span style={{ color: skipOverflowCrop ? '#38bdf8' : '#94a3b8' }}>
-                        ⚡ เกินอัตราส่วนไม่ต้อง Crop (ข้ามไปปล่อยภาพปกติ)
-                      </span>
-                    </label>
-                  </>
-                )}
-
-                {/* Quick Action: Open Interactive Drag Crop Editor */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingTop: 4, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                {/* 3 ปุ่มหลัก: ไม่ Crop | Crop 3:2 (AI อัตโนมัติ) | ลากกรอบเอง */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.25fr 1fr', gap: 5 }}>
                   <button
                     type="button"
+                    className={`mini-pill ${cropAspect === 'none' && !customCrop ? 'active' : ''}`}
+                    style={{ padding: '6px 4px', fontSize: '11px', fontWeight: 700, textAlign: 'center' }}
+                    onClick={() => {
+                      setCustomCrop(null);
+                      setSkipOverflowCrop(false);
+                      handleSizeChange('original');
+                    }}
+                  >
+                    ไม่ Crop (เต็มจอ)
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`mini-pill ${(cropAspect === '3:2' || cropAspect === '2:3' || cropAspect === '4:3') && !customCrop ? 'active' : ''}`}
+                    style={{ padding: '6px 4px', fontSize: '11px', fontWeight: 700, textAlign: 'center' }}
+                    onClick={() => {
+                      setCustomCrop(null);
+                      setSkipOverflowCrop(false);
+                      setCropComposition('face');
+                      if (!sizeMode.startsWith('nikon-') && sizeMode !== 'crop-2-3-auto') {
+                        handleSizeChange('nikon-dx-m');
+                      } else {
+                        handleCropAspectChange('3:2');
+                      }
+                    }}
+                  >
+                    📷 Crop 3:2 (AI)
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`mini-pill ${viewMode === 'Crop' || customCrop ? 'active' : ''}`}
+                    style={{ padding: '6px 4px', fontSize: '11px', fontWeight: 700, textAlign: 'center' }}
+                    onClick={() => setViewMode(viewMode === 'Crop' ? 'Split' : 'Crop')}
+                  >
+                    ✂️ ลากกรอบเอง
+                  </button>
+                </div>
+
+                {/* เลือกขนาดภาพมาตรฐานกล้อง 3:2 / ขนาดทั่วไป */}
+                <div className="cap-row" style={{ margin: 0 }}>
+                  <span className="cap-lbl" style={{ minWidth: 52 }}>{t.size}</span>
+                  <select
+                    className="compact-select"
+                    style={{ flex: 1, minWidth: 0 }}
+                    value={sizeMode}
+                    onChange={e => handleSizeChange(e.target.value)}
+                  >
+                    {SIZE_OPTIONS.map(o => (
+                      <option key={o.id} value={o.id}>
+                        {o.labelKey ? t[o.labelKey] : o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* ปุ่มลัดขนาด 3:2 ยอดนิยม (คลิกเดียวเปลี่ยนขนาดทันที) */}
+                {cropAspect !== 'none' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
+                    {[
+                      { id: 'crop-2-3-auto', lbl: 'ต้นฉบับ\n1080×1620' },
+                      { id: 'nikon-dx-s', lbl: 'DX-S\n1800×2704' },
+                      { id: 'nikon-dx-m', lbl: 'DX-M\n2696×4048' },
+                      { id: 'nikon-dx-l', lbl: 'DX-L\n3600×5408' },
+                    ].map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className={`mini-pill ${sizeMode === p.id ? 'active' : ''}`}
+                        style={{
+                          padding: '4px 2px',
+                          fontSize: '9.5px',
+                          lineHeight: 1.25,
+                          whiteSpace: 'pre-line',
+                          textAlign: 'center',
+                        }}
+                        onClick={() => handleSizeChange(p.id)}
+                      >
+                        {p.lbl}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {sizeMode === 'custom' && (
+                  <div className="cap-row" style={{ margin: 0 }}>
+                    <span className="cap-lbl">W × H</span>
+                    <div className="custom-wh" style={{ flex: 1, justifyContent: 'flex-end' }}>
+                      <input
+                        type="number"
+                        className="mini-input"
+                        style={{ width: 64 }}
+                        value={outputWidth}
+                        onChange={e => setOutputWidth(Number(e.target.value) || 100)}
+                      />
+                      <span>×</span>
+                      <input
+                        type="number"
+                        className="mini-input"
+                        style={{ width: 64 }}
+                        value={outputHeight}
+                        onChange={e => setOutputHeight(Number(e.target.value) || 100)}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* แถบสถานะสรุปสั้นๆ เข้าใจง่าย */}
+                {cropAspect !== 'none' && !customCrop && (
+                  <div
                     style={{
-                      background: customCrop ? 'linear-gradient(135deg, #0284c7, #0369a1)' : 'rgba(56, 189, 248, 0.12)',
-                      color: customCrop ? '#fff' : '#38bdf8',
-                      border: '1px solid #0284c7',
-                      padding: '5px 8px',
-                      borderRadius: 5,
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
+                      fontSize: '10.5px',
+                      color: '#10b981',
+                      background: 'rgba(16, 185, 129, 0.1)',
+                      border: '1px solid rgba(16, 185, 129, 0.25)',
+                      borderRadius: 4,
+                      padding: '4px 7px',
+                      textAlign: 'center',
+                    }}
+                  >
+                    🤖 AI วัดระยะเหนือหัว/ผมให้อัตโนมัติทุกภาพ ({outputWidth}×{outputHeight})
+                  </div>
+                )}
+
+                {customCrop && (
+                  <div
+                    style={{
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 6,
+                      justifyContent: 'space-between',
+                      fontSize: '10.5px',
+                      color: '#38bdf8',
+                      background: 'rgba(56, 189, 248, 0.12)',
+                      border: '1px solid rgba(56, 189, 248, 0.3)',
+                      borderRadius: 4,
+                      padding: '4px 7px',
                     }}
-                    onClick={() => setViewMode('Crop')}
                   >
-                    ✂️ {customCrop
-                      ? `กรอบ Crop ผู้ใช้: ${Math.round(customCrop.w * 100)}%×${Math.round(customCrop.h * 100)}% (ปรับแต่ง)`
-                      : 'เปิดเครื่องมือลาก Crop บนหน้าจอ + พรีวิวสด'}
-                  </button>
-                  {customCrop && (
+                    <span>✋ ล็อคกรอบที่ลากเองไว้</span>
                     <button
                       type="button"
                       style={{
@@ -3063,17 +3067,16 @@ export default function App() {
                         border: 'none',
                         color: '#ef4444',
                         fontSize: '10.5px',
+                        fontWeight: 700,
                         cursor: 'pointer',
                         textDecoration: 'underline',
-                        padding: '1px 0',
-                        textAlign: 'center',
                       }}
                       onClick={() => setCustomCrop(null)}
                     >
-                      ✕ ปิดกรอบลาก Crop (กลับเป็น Crop อัตโนมัติ)
+                      ✕ สลับกลับเป็น AI อัตโนมัติ
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
 
               {/* Row 3: Pixel Density (Topaz / Lightroom Style) */}

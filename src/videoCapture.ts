@@ -265,13 +265,17 @@ export function getCropDimensions(
       cropH = Math.round(srcW / targetRatio);
     }
 
-    // ข้ามการ Crop เมื่อตัวแบบล้นสัดส่วน
-    if (skipOverflowCrop && subjectAnchor && subjectAnchor.widthNorm) {
-      if (subjectAnchor.widthNorm > (cropW / srcW) * 0.98) {
-        cropW = srcW;
-        cropH = srcH;
-        skippedCrop = true;
-      }
+    // ข้ามการ Crop เฉพาะเมื่อผู้ใช้เปิดโหมดข้าม และศีรษะตัวแบบชิดขอบบนสุดของเฟรมจนตัดไม่ได้จริงๆ เท่านั้น
+    if (
+      skipOverflowCrop &&
+      subjectAnchor &&
+      subjectAnchor.headYNorm !== undefined &&
+      subjectAnchor.headYNorm < 0.012 &&
+      cropH < srcH
+    ) {
+      cropW = srcW;
+      cropH = srcH;
+      skippedCrop = true;
     }
   } else {
     // Current ratio already matches target ratio!
