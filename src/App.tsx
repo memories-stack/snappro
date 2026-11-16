@@ -1,9 +1,13 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import {
   CapturedFrame,
   CaptureSettings,
   CropAspect,
   CropComposition,
+  NormalizedCropRect,
+  getCropDimensions,
+  analyzeFrameSharpnessAndGray,
+  captureCurrentFrameAsync,
   HSLChannelKey,
   ColorMixerSettings,
   ColorGradingSettings,
@@ -93,6 +97,7 @@ const I18N = {
   en: {
     beforeAfter: 'Before / After',
     videoPlayer: 'Video',
+    cropTool: '✂️ Drag-Crop (Preview)',
     downloadAll: 'Download All',
     clearAll: 'Clear',
     dropTitle: 'Drop Videos Here or Click to Browse',
@@ -166,6 +171,7 @@ const I18N = {
   th: {
     beforeAfter: 'ก่อน / หลัง',
     videoPlayer: 'วิดีโอ',
+    cropTool: '✂️ ลาก Crop (Preview)',
     downloadAll: 'ดาวน์โหลด',
     clearAll: 'ล้าง',
     dropTitle: 'ลากไฟล์วิดีโอมาวาง หรือคลิกเพื่อเลือกไฟล์',
@@ -460,6 +466,695 @@ function stopKeepAliveEngine() {
   } catch {}
 }
 
+interface InteractiveCropEditorProps {
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+  activeVideo: VideoItem;
+  customCrop: NormalizedCropRect | null;
+  onCropChange: (crop: NormalizedCropRect | null) => void;
+  cropAspectLock: '4:3' | '16:9' | '3:2' | '1:1' | 'free';
+  onCropAspectLockChange: (mode: '4:3' | '16:9' | '3:2' | '1:1' | 'free') => void;
+  cropAspect: CropAspect;
+  onCropAspectChange: (aspect: CropAspect) => void;
+  cropComposition: CropComposition;
+  onCropCompositionChange: (comp: CropComposition) => void;
+  settings: CaptureSettings;
+  onCaptureTest: () => void;
+  onClose: () => void;
+  lang: 'th' | 'en';
+}
+
+function InteractiveCropEditor({
+  videoRef,
+  activeVideo,
+  customCrop,
+  onCropChange,
+  cropAspectLock,
+  onCropAspectLockChange,
+  cropAspect,
+  onCropAspectChange,
+  cropComposition,
+  onCropCompositionChange,
+  settings,
+  onCaptureTest,
+  onClose,
+  lang,
+}: InteractiveCropEditorProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const baseCanvasRef = useRef<HTMLCanvasElement>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  const [stageDim, setStageDim] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
+  const [currentTime, setCurrentTime] = useState<number>(0);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [isAiScanning, setIsAiScanning] = useState<boolean>(false);
+
+  const vw = activeVideo.width || 1920;
+  const vh = activeVideo.height || 1080;
+  const isPortrait = vh > vw;
+
+  // คำนวณอัตราส่วนตามโหมดล็อค (Lock Aspect Ratio)
+  // สำหรับวิดีโอแนวตั้ง (9:16 เช่น Nikon Z8):
+  // 4:3 หมายถึง 3:4 (กว้าง 3 ยาว 4 หรือ 1080x1440) เพื่อให้รับกับแนวตั้ง
+  const targetRatio = (() => {
+    switch (cropAspectLock) {
+      case '4:3':
+        return isPortrait ? 3 / 4 : 4 / 3;
+      case '16:9':
+        return isPortrait ? 9 / 16 : 16 / 9;
+      case '3:2':
+        return isPortrait ? 2 / 3 : 3 / 2;
+      case '1:1':
+        return 1.0;
+      case 'free':
+      default:
+        return null;
+    }
+  })();
+
+  // คำนวณกรอบเริ่มต้น (Default Normalized Crop Box)
+  const computeDefaultCrop = useCallback((): NormalizedCropRect => {
+    if (targetRatio) {
+      // ต้องการอัตราส่วน (w_px / h_px) = targetRatio
+      // ในหน่วย normalized: (w_norm * vw) / (h_norm * vh) = targetRatio
+      // => h_norm = w_norm * (vw / vh) / targetRatio
+      const videoRatio = vw / vh;
+      if (targetRatio < videoRatio) {
+        // จำกัดด้วยความสูง (สูงเต็ม 1.0)
+        const h = 1.0;
+        const w = (h * targetRatio) / videoRatio;
+        return {
+          x: Math.max(0, (1 - w) / 2),
+          y: 0,
+          w: Math.min(1, w),
+          h: 1.0,
+        };
+      } else {
+        // จำกัดด้วยความกว้าง (กว้างเต็ม 1.0)
+        const w = 1.0;
+        const h = (w * videoRatio) / targetRatio;
+        return {
+          x: 0,
+          y: Math.max(0, (1 - h) / 2),
+          w: 1.0,
+          h: Math.min(1, h),
+        };
+      }
+    }
+    return { x: 0.1, y: 0.1, w: 0.8, h: 0.8 };
+  }, [targetRatio, vw, vh]);
+
+  const [crop, setCrop] = useState<NormalizedCropRect>(() => {
+    return customCrop || computeDefaultCrop();
+  });
+
+  // ซิงค์กับ customCrop จากภายนอก
+  useEffect(() => {
+    if (customCrop) {
+      setCrop(customCrop);
+    }
+  }, [customCrop]);
+
+  // สังเกตขนาด Stage เพื่อคำนวณพื้นที่จัดวาง Canvas ให้พอดี
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 50 && height > 50) {
+          setStageDim({ w: width, h: height });
+        }
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // คำนวณขนาด Display ของ Canvas ใน Stage โดยรักษาสัดส่วนวิดีโอ (Aspect Ratio Fit)
+  const maxW = Math.max(100, stageDim.w - 32);
+  const maxH = Math.max(100, stageDim.h - 32);
+  const videoRatio = vw / vh;
+  let dispW = maxW;
+  let dispH = maxH;
+  if (maxW / maxH > videoRatio) {
+    dispH = maxH;
+    dispW = maxH * videoRatio;
+  } else {
+    dispW = maxW;
+    dispH = maxW / videoRatio;
+  }
+
+  // วาดเฟรมวิดีโอปัจจุบันลง baseCanvas และตัดส่วนลง previewCanvas
+  const renderFrameAndPreview = useCallback(() => {
+    const vid = videoRef.current;
+    if (!vid || vid.readyState < 2) return;
+
+    // 1. Draw base video frame
+    const baseCanvas = baseCanvasRef.current;
+    if (baseCanvas) {
+      if (baseCanvas.width !== Math.round(dispW) || baseCanvas.height !== Math.round(dispH)) {
+        baseCanvas.width = Math.round(dispW);
+        baseCanvas.height = Math.round(dispH);
+      }
+      const bCtx = baseCanvas.getContext('2d');
+      if (bCtx) {
+        bCtx.drawImage(vid, 0, 0, dispW, dispH);
+      }
+    }
+
+    // 2. Draw cropped region to Live Preview canvas (100% True Optical Crop, No Distortion)
+    const prevCanvas = previewCanvasRef.current;
+    if (prevCanvas) {
+      const srcCropX = Math.round(crop.x * vw);
+      const srcCropY = Math.round(crop.y * vh);
+      const srcCropW = Math.max(10, Math.round(crop.w * vw));
+      const srcCropH = Math.max(10, Math.round(crop.h * vh));
+
+      // Sizing preview canvas maintaining the cropped aspect ratio
+      const prevBoxW = 240;
+      const prevBoxH = Math.round((prevBoxW * srcCropH) / srcCropW);
+
+      if (prevCanvas.width !== srcCropW || prevCanvas.height !== srcCropH) {
+        prevCanvas.width = srcCropW;
+        prevCanvas.height = srcCropH;
+      }
+      const pCtx = prevCanvas.getContext('2d');
+      if (pCtx) {
+        pCtx.drawImage(vid, srcCropX, srcCropY, srcCropW, srcCropH, 0, 0, srcCropW, srcCropH);
+      }
+    }
+  }, [crop, dispW, dispH, videoRef, vw, vh]);
+
+  // วาดทันทีเมื่อ crop, dispW, dispH หรือ video time เปลี่ยน
+  useEffect(() => {
+    renderFrameAndPreview();
+  }, [renderFrameAndPreview, currentTime]);
+
+  // Animation Loop ขณะวิดีโอกำลังเล่น
+  useEffect(() => {
+    let animId: number;
+    const loop = () => {
+      const vid = videoRef.current;
+      if (vid && !vid.paused && !vid.ended) {
+        setCurrentTime(vid.currentTime);
+        renderFrameAndPreview();
+        animId = requestAnimationFrame(loop);
+      }
+    };
+    if (isPlaying) {
+      animId = requestAnimationFrame(loop);
+    }
+    return () => cancelAnimationFrame(animId);
+  }, [isPlaying, renderFrameAndPreview, videoRef]);
+
+  // ซิงค์เวลาจากวิดีโอจริง
+  useEffect(() => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    const onTime = () => setCurrentTime(vid.currentTime);
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    vid.addEventListener('timeupdate', onTime);
+    vid.addEventListener('play', onPlay);
+    vid.addEventListener('pause', onPause);
+    return () => {
+      vid.removeEventListener('timeupdate', onTime);
+      vid.removeEventListener('play', onPlay);
+      vid.removeEventListener('pause', onPause);
+    };
+  }, [videoRef]);
+
+  // ตำแหน่งพิกเซลของกล่อง Crop บนหน้าจอ
+  const boxX = crop.x * dispW;
+  const boxY = crop.y * dispH;
+  const boxW = Math.max(20, crop.w * dispW);
+  const boxH = Math.max(20, crop.h * dispH);
+
+  // คำนวณพิกเซลจริงที่จะถูกตัด
+  const realCropW = Math.round(crop.w * vw);
+  const realCropH = Math.round(crop.h * vh);
+
+  // Drag & Resize State
+  const [dragState, setDragState] = useState<{
+    type: 'move' | 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's' | 'w' | 'e';
+    startX: number;
+    startY: number;
+    startCrop: NormalizedCropRect;
+  } | null>(null);
+
+  const handlePointerDown = (
+    e: React.PointerEvent,
+    type: 'move' | 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's' | 'w' | 'e'
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    setDragState({
+      type,
+      startX: e.clientX,
+      startY: e.clientY,
+      startCrop: { ...crop },
+    });
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!dragState) return;
+    e.preventDefault();
+    const dxNorm = (e.clientX - dragState.startX) / dispW;
+    const dyNorm = (e.clientY - dragState.startY) / dispH;
+    const sc = dragState.startCrop;
+
+    let nextCrop = { ...sc };
+
+    if (dragState.type === 'move') {
+      const newX = Math.max(0, Math.min(1 - sc.w, sc.x + dxNorm));
+      const newY = Math.max(0, Math.min(1 - sc.h, sc.y + dyNorm));
+      nextCrop = { ...sc, x: newX, y: newY };
+    } else {
+      // Handles Resize
+      const aspectMult = targetRatio ? (vw / vh) / targetRatio : null;
+
+      if (dragState.type === 'se') {
+        let newW = Math.max(0.05, Math.min(1 - sc.x, sc.w + dxNorm));
+        let newH = aspectMult ? newW * aspectMult : Math.max(0.05, Math.min(1 - sc.y, sc.h + dyNorm));
+        if (sc.y + newH > 1) {
+          newH = 1 - sc.y;
+          if (aspectMult) newW = newH / aspectMult;
+        }
+        nextCrop = { ...sc, w: Math.min(1 - sc.x, newW), h: Math.min(1 - sc.y, newH) };
+      } else if (dragState.type === 'sw') {
+        let newW = Math.max(0.05, Math.min(sc.x + sc.w, sc.w - dxNorm));
+        let newH = aspectMult ? newW * aspectMult : Math.max(0.05, Math.min(1 - sc.y, sc.h + dyNorm));
+        if (sc.y + newH > 1) {
+          newH = 1 - sc.y;
+          if (aspectMult) newW = newH / aspectMult;
+        }
+        const newX = sc.x + (sc.w - newW);
+        nextCrop = { x: Math.max(0, newX), y: sc.y, w: newW, h: newH };
+      } else if (dragState.type === 'ne') {
+        let newW = Math.max(0.05, Math.min(1 - sc.x, sc.w + dxNorm));
+        let newH = aspectMult ? newW * aspectMult : Math.max(0.05, Math.min(sc.y + sc.h, sc.h - dyNorm));
+        if (sc.y + sc.h - newH < 0) {
+          newH = sc.y + sc.h;
+          if (aspectMult) newW = newH / aspectMult;
+        }
+        const newY = sc.y + (sc.h - newH);
+        nextCrop = { x: sc.x, y: Math.max(0, newY), w: newW, h: newH };
+      } else if (dragState.type === 'nw') {
+        let newW = Math.max(0.05, Math.min(sc.x + sc.w, sc.w - dxNorm));
+        let newH = aspectMult ? newW * aspectMult : Math.max(0.05, Math.min(sc.y + sc.h, sc.h - dyNorm));
+        if (sc.y + sc.h - newH < 0) {
+          newH = sc.y + sc.h;
+          if (aspectMult) newW = newH / aspectMult;
+        }
+        const newX = sc.x + (sc.w - newW);
+        const newY = sc.y + (sc.h - newH);
+        nextCrop = { x: Math.max(0, newX), y: Math.max(0, newY), w: newW, h: newH };
+      } else if (dragState.type === 'n') {
+        let newH = Math.max(0.05, Math.min(sc.y + sc.h, sc.h - dyNorm));
+        let newW = aspectMult ? newH / aspectMult : sc.w;
+        const newY = sc.y + (sc.h - newH);
+        const newX = aspectMult ? Math.max(0, Math.min(1 - newW, sc.x + (sc.w - newW) / 2)) : sc.x;
+        nextCrop = { x: newX, y: Math.max(0, newY), w: newW, h: newH };
+      } else if (dragState.type === 's') {
+        let newH = Math.max(0.05, Math.min(1 - sc.y, sc.h + dyNorm));
+        let newW = aspectMult ? newH / aspectMult : sc.w;
+        const newX = aspectMult ? Math.max(0, Math.min(1 - newW, sc.x + (sc.w - newW) / 2)) : sc.x;
+        nextCrop = { x: newX, y: sc.y, w: newW, h: newH };
+      } else if (dragState.type === 'w') {
+        let newW = Math.max(0.05, Math.min(sc.x + sc.w, sc.w - dxNorm));
+        let newH = aspectMult ? newW * aspectMult : sc.h;
+        const newX = sc.x + (sc.w - newW);
+        const newY = aspectMult ? Math.max(0, Math.min(1 - newH, sc.y + (sc.h - newH) / 2)) : sc.y;
+        nextCrop = { x: Math.max(0, newX), y: newY, w: newW, h: newH };
+      } else if (dragState.type === 'e') {
+        let newW = Math.max(0.05, Math.min(1 - sc.x, sc.w + dxNorm));
+        let newH = aspectMult ? newW * aspectMult : sc.h;
+        const newY = aspectMult ? Math.max(0, Math.min(1 - newH, sc.y + (sc.h - newH) / 2)) : sc.y;
+        nextCrop = { x: sc.x, y: newY, w: newW, h: newH };
+      }
+    }
+
+    setCrop(nextCrop);
+    onCropChange(nextCrop);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (dragState) {
+      try {
+        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {}
+      setDragState(null);
+    }
+  };
+
+  // 🎯 AI Auto-Center Subject: ค้นหาตำแหน่งนักวิ่ง/ตัวแบบและเลื่อนกรอบ Crop มาวางตรงกลางตัวแบบทันที
+  const handleAiCenterSubject = () => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    setIsAiScanning(true);
+    try {
+      const analysis = analyzeFrameSharpnessAndGray(vid, vw, vh);
+      if (analysis && analysis.subjectCentroid) {
+        const sc = analysis.subjectCentroid;
+        // จัดให้ตำแหน่งกึ่งกลางของกรอบตรงกับ centroid ของตัวแบบ
+        const newX = Math.max(0, Math.min(1 - crop.w, sc.xNorm - crop.w / 2));
+        const newY = Math.max(0, Math.min(1 - crop.h, sc.yNorm - crop.h / 2));
+        const nextCrop = { ...crop, x: newX, y: newY };
+        setCrop(nextCrop);
+        onCropChange(nextCrop);
+      }
+    } catch (e) {
+      console.warn('AI detect failed:', e);
+    } finally {
+      setIsAiScanning(false);
+    }
+  };
+
+  // ⟲ จัดกึ่งกลางเฟรม
+  const handleCenterCrop = () => {
+    const nextCrop = {
+      ...crop,
+      x: Math.max(0, (1 - crop.w) / 2),
+      y: Math.max(0, (1 - crop.h) / 2),
+    };
+    setCrop(nextCrop);
+    onCropChange(nextCrop);
+  };
+
+  // เปลี่ยนโหมดอัตราส่วน (4:3, 16:9, 3:2, 1:1, Free)
+  const handleSelectAspectLock = (mode: '4:3' | '16:9' | '3:2' | '1:1' | 'free') => {
+    onCropAspectLockChange(mode);
+    if (mode === '4:3') {
+      onCropAspectChange('4:3');
+    } else if (mode === '16:9') {
+      onCropAspectChange('16:9');
+    } else if (mode === '3:2') {
+      onCropAspectChange('3:2');
+    } else if (mode === '1:1') {
+      onCropAspectChange('1:1');
+    }
+
+    if (mode === 'free') return;
+
+    // คำนวณ ratio ใหม่
+    const newRatio = (() => {
+      switch (mode) {
+        case '4:3': return isPortrait ? 3 / 4 : 4 / 3;
+        case '16:9': return isPortrait ? 9 / 16 : 16 / 9;
+        case '3:2': return isPortrait ? 2 / 3 : 3 / 2;
+        case '1:1': return 1.0;
+        default: return 1.0;
+      }
+    })();
+
+    const videoRatio = vw / vh;
+    let newW = crop.w;
+    let newH = (newW * videoRatio) / newRatio;
+    if (newH > 1) {
+      newH = 1.0;
+      newW = (newH * newRatio) / videoRatio;
+    }
+    const newX = Math.max(0, Math.min(1 - newW, crop.x));
+    const newY = Math.max(0, Math.min(1 - newH, crop.y));
+    const nextCrop = { x: newX, y: newY, w: newW, h: newH };
+    setCrop(nextCrop);
+    onCropChange(nextCrop);
+  };
+
+  // สลับเล่น/หยุด
+  const togglePlay = () => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    if (vid.paused) {
+      vid.play();
+    } else {
+      vid.pause();
+    }
+  };
+
+  // ก้าวเฟรมทีละ 1 เฟรม (ประมาณ 1/25 วินาที = 0.04s)
+  const stepFrame = (delta: number) => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    vid.pause();
+    const frameTime = 1 / 25;
+    const newT = Math.max(0, Math.min(vid.duration || 10, vid.currentTime + delta * frameTime));
+    vid.currentTime = newT;
+    setCurrentTime(newT);
+  };
+
+  return (
+    <div className="crop-studio-layout">
+      {/* 1. TOP TOOLBAR */}
+      <div className="crop-top-bar">
+        <div className="crop-top-left">
+          <div className="crop-title-badge">
+            <span>✂️ ลาก Crop (Interactive)</span>
+          </div>
+
+          {/* อัตราส่วนล็อค (Lock Aspect Ratio) */}
+          <div className="crop-ratio-group">
+            <button
+              type="button"
+              className={`crop-ratio-btn ${cropAspectLock === '4:3' ? 'active' : ''}`}
+              onClick={() => handleSelectAspectLock('4:3')}
+              title={isPortrait ? 'ล็อค 3:4 (4:3 แนวตั้งสำหรับ Nikon Z8)' : 'ล็อค 4:3'}
+            >
+              📷 4:3 {isPortrait ? '(3:4 แนวตั้ง)' : ''}
+            </button>
+            <button
+              type="button"
+              className={`crop-ratio-btn ${cropAspectLock === '16:9' ? 'active' : ''}`}
+              onClick={() => handleSelectAspectLock('16:9')}
+            >
+              16:9 {isPortrait ? '(9:16)' : ''}
+            </button>
+            <button
+              type="button"
+              className={`crop-ratio-btn ${cropAspectLock === '3:2' ? 'active' : ''}`}
+              onClick={() => handleSelectAspectLock('3:2')}
+            >
+              3:2
+            </button>
+            <button
+              type="button"
+              className={`crop-ratio-btn ${cropAspectLock === '1:1' ? 'active' : ''}`}
+              onClick={() => handleSelectAspectLock('1:1')}
+            >
+              1:1
+            </button>
+            <button
+              type="button"
+              className={`crop-ratio-btn ${cropAspectLock === 'free' ? 'active' : ''}`}
+              onClick={() => handleSelectAspectLock('free')}
+            >
+              🔓 อิสระ
+            </button>
+          </div>
+        </div>
+
+        {/* แอคชันด่วน */}
+        <div className="crop-top-actions">
+          <button
+            type="button"
+            className="crop-action-btn ai-btn"
+            onClick={handleAiCenterSubject}
+            disabled={isAiScanning}
+            title="ใช้อัลกอริทึมวิเคราะห์หาตัวแบบ (นักวิ่ง) แล้วจัดกรอบมาไว้ตรงกลางอัตโนมัติ"
+          >
+            {isAiScanning ? '⏳ AI กำลังค้นหา...' : '🎯 AI จัดตัวแบบ'}
+          </button>
+          <button
+            type="button"
+            className="crop-action-btn"
+            onClick={handleCenterCrop}
+            title="จัดกรอบไว้กึ่งกลางภาพพอดี"
+          >
+            ⟲ จัดกึ่งกลาง
+          </button>
+          <button
+            type="button"
+            className="crop-action-btn"
+            onClick={() => {
+              const full: NormalizedCropRect = { x: 0, y: 0, w: 1, h: 1 };
+              setCrop(full);
+              onCropChange(full);
+            }}
+            title="ขยายกรอบเต็มเฟรม 100%"
+          >
+            เต็มจอ
+          </button>
+          <button
+            type="button"
+            className="crop-action-btn snap-btn"
+            onClick={onCaptureTest}
+            title="แคปและบันทึกภาพเฟรมนี้ตามกรอบ Crop ทันทีเพื่อตรวจสอบ"
+          >
+            📸 แคปทดสอบเฟรมนี้
+          </button>
+          <button
+            type="button"
+            className="crop-action-btn close-btn"
+            onClick={onClose}
+            title="เสร็จสิ้นและกลับสู่หน้าเปรียบเทียบ ก่อน/หลัง"
+          >
+            ✓ นำกรอบนี้ไปใช้ & ปิด
+          </button>
+        </div>
+      </div>
+
+      {/* 2. MAIN WORKSPACE */}
+      <div className="crop-workspace" ref={containerRef}>
+        <div className="crop-stage">
+          <div
+            className="crop-canvas-box"
+            style={{ width: Math.round(dispW), height: Math.round(dispH) }}
+          >
+            {/* Base Video Frame Canvas */}
+            <canvas ref={baseCanvasRef} className="crop-base-canvas" />
+
+            {/* Dark Mask Outside Crop Area */}
+            <svg className="crop-svg-mask">
+              <path
+                fill="rgba(0, 0, 0, 0.65)"
+                fillRule="evenodd"
+                d={`M 0 0 L ${dispW} 0 L ${dispW} ${dispH} L 0 ${dispH} Z M ${boxX} ${boxY} L ${boxX} ${boxY + boxH} L ${boxX + boxW} ${boxY + boxH} L ${boxX + boxW} ${boxY} Z`}
+              />
+            </svg>
+
+            {/* Interactive Crop Box Overlay */}
+            <div
+              className={`crop-interactive-box ${dragState ? 'dragging' : ''}`}
+              style={{
+                left: boxX,
+                top: boxY,
+                width: boxW,
+                height: boxH,
+              }}
+              onPointerDown={e => handlePointerDown(e, 'move')}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+            >
+              {/* Rule-of-Thirds Grid (เส้นตารางจุดตัดเก้าช่อง 1:2 และ 2:3) */}
+              <div className="crop-rule-grid">
+                <div className="crop-grid-v1" />
+                <div className="crop-grid-v2" />
+                <div className="crop-grid-h1" />
+                <div className="crop-grid-h2" />
+                <div className="crop-center-target" />
+              </div>
+
+              {/* 8 Resize Handles */}
+              <div className="crop-handle crop-handle-nw" onPointerDown={e => handlePointerDown(e, 'nw')} />
+              <div className="crop-handle crop-handle-ne" onPointerDown={e => handlePointerDown(e, 'ne')} />
+              <div className="crop-handle crop-handle-se" onPointerDown={e => handlePointerDown(e, 'se')} />
+              <div className="crop-handle crop-handle-sw" onPointerDown={e => handlePointerDown(e, 'sw')} />
+              <div className="crop-handle crop-handle-n" onPointerDown={e => handlePointerDown(e, 'n')} />
+              <div className="crop-handle crop-handle-s" onPointerDown={e => handlePointerDown(e, 's')} />
+              <div className="crop-handle crop-handle-w" onPointerDown={e => handlePointerDown(e, 'w')} />
+              <div className="crop-handle crop-handle-e" onPointerDown={e => handlePointerDown(e, 'e')} />
+            </div>
+          </div>
+        </div>
+
+        {/* 3. FLOATING / DOCKED REAL-TIME LIVE CROPPED PREVIEW */}
+        <div className="crop-preview-dock">
+          <div className="crop-preview-header">
+            <span>👀 ภาพพรีวิว Crop สด (Live)</span>
+            <span className="crop-preview-badge">100% Optical</span>
+          </div>
+
+          <div
+            className="crop-preview-canvas-box"
+            style={{ aspectRatio: `${realCropW} / ${realCropH}` }}
+          >
+            <canvas ref={previewCanvasRef} />
+          </div>
+
+          <div className="crop-preview-meta">
+            <div className="crop-preview-meta-row">
+              <span className="crop-preview-meta-lbl">ตัดจากต้นฉบับ:</span>
+              <span className="crop-preview-meta-val">{realCropW} × {realCropH} px</span>
+            </div>
+            <div className="crop-preview-meta-row">
+              <span className="crop-preview-meta-lbl">อัตราส่วน:</span>
+              <span className="crop-preview-meta-val">
+                {cropAspectLock === '4:3'
+                  ? isPortrait ? '3:4 (4:3 แนวตั้ง)' : '4:3 แนวนอน'
+                  : cropAspectLock}
+              </span>
+            </div>
+            <div className="crop-preview-meta-row">
+              <span className="crop-preview-meta-lbl">สถานะชิ้นงาน:</span>
+              <span className="crop-preview-meta-val" style={{ color: '#10b981' }}>
+                ✓ คมชัด ไม่บีบอัด ไม่ยืด
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="crop-action-btn snap-btn"
+            style={{ width: '100%', justifyContent: 'center', padding: '6px' }}
+            onClick={onCaptureTest}
+          >
+            📸 แคปภาพตามกรอบนี้
+          </button>
+        </div>
+      </div>
+
+      {/* 4. BOTTOM VIDEO TIMELINE SCRUBBER */}
+      <div className="crop-bottom-bar">
+        <button
+          type="button"
+          className="crop-action-btn"
+          onClick={togglePlay}
+          style={{ minWidth: 32, justifyContent: 'center' }}
+        >
+          {isPlaying ? '⏸' : '▶'}
+        </button>
+        <button
+          type="button"
+          className="crop-action-btn"
+          onClick={() => stepFrame(-1)}
+          title="ถอยหลัง 1 เฟรม"
+        >
+          ⏮
+        </button>
+        <button
+          type="button"
+          className="crop-action-btn"
+          onClick={() => stepFrame(1)}
+          title="เดินหน้า 1 เฟรม"
+        >
+          ⏭
+        </button>
+
+        <input
+          type="range"
+          className="crop-scrub-slider"
+          min={0}
+          max={videoRef.current?.duration || activeVideo.duration || 10}
+          step={0.04}
+          value={currentTime}
+          onChange={e => {
+            const t = Number(e.target.value);
+            setCurrentTime(t);
+            if (videoRef.current) {
+              videoRef.current.currentTime = t;
+            }
+          }}
+        />
+
+        <div className="crop-timecode">
+          {formatTimestamp(currentTime)} / {formatDuration(videoRef.current?.duration || activeVideo.duration || 0)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const savedInit = useRef<Record<string, any>>(loadSavedStudioSettings()).current;
   const [lang, setLang] = useState<Lang>(() => savedInit.lang || 'en');
@@ -471,7 +1166,9 @@ export default function App() {
 
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [activeVideoId, setActiveVideoId] = useState('');
-  const [viewMode, setViewMode] = useState<'Split' | 'Video'>('Split');
+  const [viewMode, setViewMode] = useState<'Split' | 'Video' | 'Crop'>('Split');
+  const [customCrop, setCustomCrop] = useState<NormalizedCropRect | null>(null);
+  const [cropAspectLock, setCropAspectLock] = useState<'4:3' | '16:9' | '3:2' | '1:1' | 'free'>('4:3');
   const [toolTab, setToolTab] = useState<ToolTab>('grading');
   const [hslMode, setHslMode] = useState<HSLMode>('sat');
 
@@ -737,6 +1434,7 @@ export default function App() {
       cropAspect,
       cropComposition,
       skipOverflowCrop,
+      customCrop: customCrop || undefined,
       pixelDensity,
       densityUnit,
       smartBestShot,
@@ -762,6 +1460,7 @@ export default function App() {
       cropAspect,
       cropComposition,
       skipOverflowCrop,
+      customCrop,
       pixelDensity,
       densityUnit,
       smartBestShot,
@@ -1300,6 +1999,34 @@ export default function App() {
     } catch { /* skip */ }
   };
 
+  // แคปทดสอบเฟรมปัจจุบันตามกรอบ Crop และบันทึก/แสดงผลทันที
+  const handleCaptureCurrentCropTest = async () => {
+    if (!previewVideoRef.current || !activeVideo) return;
+    const vid = previewVideoRef.current;
+    try {
+      const settings = buildCurrentSettings();
+      const frame = await captureCurrentFrameAsync(vid, settings);
+      const existingFilesSet = await getExistingFileNames(saveDirHandle);
+      await saveFrameToHandle(
+        saveDirHandle,
+        frame,
+        activeVideo.sharpFrames,
+        activeVideo.name,
+        existingFilesSet,
+        duplicateMode
+      );
+      setVideos(prev =>
+        prev.map(v =>
+          v.id === activeVideo.id
+            ? { ...v, frames: [frame, ...v.frames], sharpFrames: v.sharpFrames + 1 }
+            : v
+        )
+      );
+    } catch (e) {
+      console.error('Failed to capture test crop frame:', e);
+    }
+  };
+
   // Start Processing — Optimized Parallel Worker Pool for Massive Batches (200–1000+ videos)
   const startWork = async () => {
     if (!workVideoRef.current || videos.length === 0) return;
@@ -1685,6 +2412,13 @@ export default function App() {
                 {t.beforeAfter}
               </button>
               <button
+                className={`view-switch-btn ${viewMode === 'Crop' ? 'active' : ''}`}
+                onClick={() => setViewMode('Crop')}
+                title="ลากกรอบตัด Crop บนวิดีโอสด พร้อมดูตัวอย่างแบบเรียลไทม์"
+              >
+                {t.cropTool}
+              </button>
+              <button
                 className={`view-switch-btn ${viewMode === 'Video' ? 'active' : ''}`}
                 onClick={() => setViewMode('Video')}
               >
@@ -1793,7 +2527,7 @@ export default function App() {
                 <video
                   ref={previewVideoRef}
                   src={previewUrl || undefined}
-                  controls
+                  controls={viewMode !== 'Crop'}
                   muted
                   onLoadedMetadata={e => {
                     const vid = e.currentTarget;
@@ -1817,6 +2551,7 @@ export default function App() {
                   onSeeked={updateComparison}
                   style={{
                     width: '100%',
+                    display: viewMode === 'Crop' ? 'none' : 'block',
                     maxHeight: viewMode === 'Video' ? 'calc(100vh - 180px)' : 36,
                     height: viewMode === 'Video' ? '100%' : 36,
                     borderRadius: 6,
@@ -1824,6 +2559,25 @@ export default function App() {
                     objectFit: 'contain',
                   }}
                 />
+
+                {viewMode === 'Crop' && activeVideo && (
+                  <InteractiveCropEditor
+                    videoRef={previewVideoRef}
+                    activeVideo={activeVideo}
+                    customCrop={customCrop}
+                    onCropChange={setCustomCrop}
+                    cropAspectLock={cropAspectLock}
+                    onCropAspectLockChange={setCropAspectLock}
+                    cropAspect={cropAspect}
+                    onCropAspectChange={handleCropAspectChange}
+                    cropComposition={cropComposition}
+                    onCropCompositionChange={setCropComposition}
+                    settings={buildCurrentSettings()}
+                    onCaptureTest={handleCaptureCurrentCropTest}
+                    onClose={() => setViewMode('Split')}
+                    lang={lang}
+                  />
+                )}
 
                 {viewMode === 'Split' && compareData && (
                   <div className="compare-split">
@@ -2200,6 +2954,50 @@ export default function App() {
                     </label>
                   </>
                 )}
+
+                {/* Quick Action: Open Interactive Drag Crop Editor */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingTop: 4, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                  <button
+                    type="button"
+                    style={{
+                      background: customCrop ? 'linear-gradient(135deg, #0284c7, #0369a1)' : 'rgba(56, 189, 248, 0.12)',
+                      color: customCrop ? '#fff' : '#38bdf8',
+                      border: '1px solid #0284c7',
+                      padding: '5px 8px',
+                      borderRadius: 5,
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                    }}
+                    onClick={() => setViewMode('Crop')}
+                  >
+                    ✂️ {customCrop
+                      ? `กรอบ Crop ผู้ใช้: ${Math.round(customCrop.w * 100)}%×${Math.round(customCrop.h * 100)}% (ปรับแต่ง)`
+                      : 'เปิดเครื่องมือลาก Crop บนหน้าจอ + พรีวิวสด'}
+                  </button>
+                  {customCrop && (
+                    <button
+                      type="button"
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#ef4444',
+                        fontSize: '10.5px',
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                        padding: '1px 0',
+                        textAlign: 'center',
+                      }}
+                      onClick={() => setCustomCrop(null)}
+                    >
+                      ✕ ปิดกรอบลาก Crop (กลับเป็น Crop อัตโนมัติ)
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Row 3: Pixel Density (Topaz / Lightroom Style) */}

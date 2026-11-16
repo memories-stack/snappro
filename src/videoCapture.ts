@@ -129,6 +129,13 @@ export interface HistogramData {
 export type CropAspect = 'none' | '4:3' | '16:9' | '3:2' | '2:3' | '1:1' | '9:16' | '1:2';
 export type CropComposition = '1:2' | '2:3'; // '1:2' = กึ่งกลาง 50%, '2:3' = จุดตัดเก้าช่อง 2/3 ส่วน (Rule of Thirds)
 
+export interface NormalizedCropRect {
+  x: number; // 0..1 (สัดส่วนซ้าย)
+  y: number; // 0..1 (สัดส่วนบน)
+  w: number; // 0..1 (สัดส่วนความกว้าง)
+  h: number; // 0..1 (สัดส่วนความสูง)
+}
+
 export interface SubjectCentroid {
   xNorm: number;
   yNorm: number;
@@ -144,7 +151,8 @@ export function getCropDimensions(
   targetH?: number,
   subjectAnchor?: SubjectCentroid,
   composition: CropComposition = '1:2',
-  skipOverflowCrop: boolean = true
+  skipOverflowCrop: boolean = true,
+  customCrop?: NormalizedCropRect
 ): {
   cropX: number;
   cropY: number;
@@ -156,6 +164,32 @@ export function getCropDimensions(
   uvOffset: [number, number];
   skippedCrop: boolean;
 } {
+  // หากมีกรอบที่ผู้ใช้ลากปรับด้วยตัวเอง (Interactive Drag Crop)
+  if (customCrop && customCrop.w > 0.02 && customCrop.h > 0.02) {
+    const cropX = Math.max(0, Math.min(srcW - 10, Math.round(customCrop.x * srcW)));
+    const cropY = Math.max(0, Math.min(srcH - 10, Math.round(customCrop.y * srcH)));
+    const cropW = Math.max(10, Math.min(srcW - cropX, Math.round(customCrop.w * srcW)));
+    const cropH = Math.max(10, Math.min(srcH - cropY, Math.round(customCrop.h * srcH)));
+
+    let outW = cropW;
+    let outH = cropH;
+
+    if (targetW && targetH && targetW > 0 && targetH > 0) {
+      const cropRatio = cropW / cropH;
+      if (targetW / targetH > cropRatio) {
+        outW = Math.round(targetH * cropRatio);
+        outH = targetH;
+      } else {
+        outW = targetW;
+        outH = Math.round(targetW / cropRatio);
+      }
+    }
+
+    const uvScale: [number, number] = [cropW / srcW, cropH / srcH];
+    const uvOffset: [number, number] = [cropX / srcW, cropY / srcH];
+    return { cropX, cropY, cropW, cropH, outW, outH, uvScale, uvOffset, skippedCrop: false };
+  }
+
   if (cropAspect === 'none') {
     let outW = srcW;
     let outH = srcH;
@@ -307,6 +341,7 @@ export interface CaptureSettings {
   cropComposition?: CropComposition;
   skipOverflowCrop?: boolean;
   subjectAnchor?: SubjectCentroid;
+  customCrop?: NormalizedCropRect;
   // Lightroom File Settings (Limit File Size To KB, Color Space, HDR, Compatibility)
   limitFileSize?: boolean;
   maxFileSizeKb?: number;
@@ -1277,7 +1312,7 @@ function renderEnhancedFrameToCanvas(
   let renderSrcH = srcH;
 
   // 1. True Image Cropping (ตัดส่วนภาพจริงตามอัตราส่วน ไม่บีบอัดชิ้นงาน 100%)
-  if (settings.cropAspect && settings.cropAspect !== 'none') {
+  if ((settings.cropAspect && settings.cropAspect !== 'none') || settings.customCrop) {
     const crop = getCropDimensions(
       srcW,
       srcH,
@@ -1286,7 +1321,8 @@ function renderEnhancedFrameToCanvas(
       destH,
       settings.subjectAnchor,
       settings.cropComposition,
-      settings.skipOverflowCrop ?? true
+      settings.skipOverflowCrop ?? true,
+      settings.customCrop
     );
 
     if (!crop.skippedCrop) {
@@ -1386,7 +1422,8 @@ export function renderComparisonPreview(
     undefined,
     analysis.subjectCentroid,
     settings.cropComposition,
-    settings.skipOverflowCrop ?? true
+    settings.skipOverflowCrop ?? true,
+    settings.customCrop
   );
   const maxDim = 960;
   const scale = Math.min(1, maxDim / Math.max(crop.cropW, crop.cropH));
@@ -1513,20 +1550,37 @@ export async function captureCurrentFrameAsync(
 
   let outW = settings.outputWidth;
   let outH = settings.outputHeight;
+  let frameSettings: CaptureSettings = settings;
 
-  // Smart Auto-Orientation: Match preset long-edge with video orientation (Portrait vs Landscape)
-  if ((origH > origW && outW > outH) || (origW > origH && outH > outW)) {
-    const tmp = outW;
-    outW = outH;
-    outH = tmp;
-  }
+  if ((settings.cropAspect && settings.cropAspect !== 'none') || settings.customCrop) {
+    const crop = getCropDimensions(
+      origW,
+      origH,
+      settings.cropAspect,
+      outW,
+      outH,
+      undefined,
+      settings.cropComposition,
+      settings.skipOverflowCrop ?? true,
+      settings.customCrop
+    );
+    outW = crop.outW;
+    outH = crop.outH;
+  } else {
+    // Smart Auto-Orientation: Match preset long-edge with video orientation (Portrait vs Landscape)
+    if ((origH > origW && outW > outH) || (origW > origH && outH > outW)) {
+      const tmp = outW;
+      outW = outH;
+      outH = tmp;
+    }
 
-  if (settings.keepAspectRatio) {
-    const ratio = origW / origH;
-    if (outW / outH > ratio) {
-      outW = Math.round(outH * ratio);
-    } else {
-      outH = Math.round(outW / ratio);
+    if (settings.keepAspectRatio) {
+      const ratio = origW / origH;
+      if (outW / outH > ratio) {
+        outW = Math.round(outH * ratio);
+      } else {
+        outH = Math.round(outW / ratio);
+      }
     }
   }
 
@@ -1598,7 +1652,7 @@ export function captureCurrentFrame(
   let outH = settings.outputHeight;
   let frameSettings: CaptureSettings = settings;
 
-  if (settings.cropAspect && settings.cropAspect !== 'none') {
+  if ((settings.cropAspect && settings.cropAspect !== 'none') || settings.customCrop) {
     const crop = getCropDimensions(
       origW,
       origH,
@@ -1607,7 +1661,8 @@ export function captureCurrentFrame(
       outH,
       analysis.subjectCentroid,
       settings.cropComposition,
-      settings.skipOverflowCrop ?? true
+      settings.skipOverflowCrop ?? true,
+      settings.customCrop
     );
     outW = crop.outW;
     outH = crop.outH;
@@ -1790,7 +1845,7 @@ export async function autoCapture(
       let outW = settings.outputWidth;
       let outH = settings.outputHeight;
       let frameSettings: CaptureSettings = settings;
-      if (settings.cropAspect && settings.cropAspect !== 'none') {
+      if ((settings.cropAspect && settings.cropAspect !== 'none') || settings.customCrop) {
         const crop = getCropDimensions(
           origW,
           origH,
@@ -1799,7 +1854,8 @@ export async function autoCapture(
           outH,
           bestAnalysis ? bestAnalysis.subjectCentroid : undefined,
           settings.cropComposition,
-          settings.skipOverflowCrop ?? true
+          settings.skipOverflowCrop ?? true,
+          settings.customCrop
         );
         outW = crop.outW;
         outH = crop.outH;
