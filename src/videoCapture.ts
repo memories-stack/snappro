@@ -156,21 +156,61 @@ export function getCropDimensions(
   uvOffset: [number, number];
   skippedCrop: boolean;
 } {
+  if (cropAspect === 'none') {
+    let outW = srcW;
+    let outH = srcH;
+    if (targetW && targetH && targetW > 0 && targetH > 0) {
+      outW = targetW;
+      outH = targetH;
+      if ((srcH > srcW && outW > outH) || (srcW > srcH && outH > outW)) {
+        const t = outW;
+        outW = outH;
+        outH = t;
+      }
+    }
+    return {
+      cropX: 0,
+      cropY: 0,
+      cropW: srcW,
+      cropH: srcH,
+      outW,
+      outH,
+      uvScale: [1, 1],
+      uvOffset: [0, 0],
+      skippedCrop: true,
+    };
+  }
+
+  // Calculate target aspect ratio based on video orientation
+  // In Landscape (srcW >= srcH):
+  //   4:3 -> 4 / 3 (1.3333)
+  //   16:9 -> 16 / 9 (1.7778)
+  //   3:2 / 2:3 -> 3 / 2 (1.5)
+  //   1:1 -> 1.0
+  //   9:16 -> 9 / 16 (0.5625)
+  //   1:2 -> 1 / 2 (0.5)
+  // In Portrait (srcH > srcW):
+  //   4:3 -> 3 / 4 (0.75, standard 4:3 vertical)
+  //   16:9 -> 9 / 16 (0.5625)
+  //   3:2 / 2:3 -> 2 / 3 (0.6667)
+  //   1:1 -> 1.0
+  //   9:16 -> 9 / 16 (0.5625)
+  //   1:2 -> 1 / 2 (0.5)
   let targetRatio = srcW / srcH;
+  const isPortrait = srcH > srcW;
+
   if (cropAspect === '4:3') {
-    targetRatio = srcH > srcW ? 3 / 4 : 4 / 3;
+    targetRatio = isPortrait ? 3 / 4 : 4 / 3;
   } else if (cropAspect === '16:9') {
-    targetRatio = srcH > srcW ? 9 / 16 : 16 / 9;
-  } else if (cropAspect === '3:2') {
-    targetRatio = srcH > srcW ? 2 / 3 : 3 / 2;
-  } else if (cropAspect === '2:3') {
-    targetRatio = srcH > srcW ? 2 / 3 : 3 / 2;
+    targetRatio = isPortrait ? 9 / 16 : 16 / 9;
+  } else if (cropAspect === '3:2' || cropAspect === '2:3') {
+    targetRatio = isPortrait ? 2 / 3 : 3 / 2;
   } else if (cropAspect === '1:1') {
     targetRatio = 1.0;
   } else if (cropAspect === '9:16') {
     targetRatio = 9 / 16;
   } else if (cropAspect === '1:2') {
-    targetRatio = srcH > srcW ? 1 / 2 : 2 / 1;
+    targetRatio = isPortrait ? 1 / 2 : 2 / 1;
   }
 
   let cropW = srcW;
@@ -178,7 +218,7 @@ export function getCropDimensions(
   const currentRatio = srcW / srcH;
   let skippedCrop = false;
 
-  if (cropAspect !== 'none' && Math.abs(currentRatio - targetRatio) > 0.005) {
+  if (Math.abs(currentRatio - targetRatio) > 0.005) {
     if (currentRatio > targetRatio) {
       // Source is wider than target ratio: crop sides
       cropW = Math.round(srcH * targetRatio);
@@ -189,20 +229,16 @@ export function getCropDimensions(
       cropH = Math.round(srcW / targetRatio);
     }
 
-    // ตรวจสอบเงื่อนไข: เกินอัตราส่วน ให้ข้ามการ Crop (รักษาภาพเต็มต้นฉบับ)
-    if (skipOverflowCrop) {
-      const cropRatioOfSrc = (cropW * cropH) / (srcW * srcH);
-      const subjectExceeds =
-        subjectAnchor && subjectAnchor.widthNorm && subjectAnchor.widthNorm > (cropW / srcW) * 0.95;
-
-      if (subjectExceeds || cropRatioOfSrc < 0.45) {
-        // ข้ามการ Crop ปล่อยเป็นขนาดเต็มต้นฉบับ
+    // ข้ามการ Crop เมื่อตัวแบบล้นสัดส่วน
+    if (skipOverflowCrop && subjectAnchor && subjectAnchor.widthNorm) {
+      if (subjectAnchor.widthNorm > (cropW / srcW) * 0.98) {
         cropW = srcW;
         cropH = srcH;
         skippedCrop = true;
       }
     }
   } else {
+    // Current ratio already matches target ratio!
     skippedCrop = true;
   }
 
@@ -218,7 +254,7 @@ export function getCropDimensions(
     let anchorY = 0.45;
 
     if (composition === '2:3') {
-      // สัดส่วน 2:3 ส่วน (Rule of Thirds): วางตัวแบบที่ 1/3 หรือ 2/3 ตามทิศทาง
+      // สัดส่วน 2:3 ส่วน (Rule of Thirds): วางตัวแบบที่ 1/3 หรือ 2/3
       anchorX = sX < 0.5 ? 0.333 : 0.667;
       anchorY = 0.38; // สัดส่วนสายตาในแนวตั้ง 2:3 ส่วนจากด้านล่าง (1/3 จากด้านบน)
     } else {
@@ -234,16 +270,24 @@ export function getCropDimensions(
     cropY = Math.max(0, Math.min(srcH - cropH, idealY));
   }
 
+  // รักษาอัตราส่วนของเอาต์พุตให้ตรงกับสัดส่วน Crop 100% (ห้ามบีบหรือยืดภาพเด็ดขาด)
   let outW = cropW;
   let outH = cropH;
 
   if (targetW && targetH && targetW > 0 && targetH > 0) {
-    outW = targetW;
-    outH = targetH;
-    if ((cropH > cropW && outW > outH) || (cropW > cropH && outH > outW)) {
-      const t = outW;
-      outW = outH;
-      outH = t;
+    if (!skippedCrop) {
+      outW = targetW;
+      outH = targetH;
+      // หมุนสัดส่วนเอาต์พุตให้ตรงกับแนวภาพ Crop (แนวตั้ง vs แนวนอน)
+      if ((cropH > cropW && outW > outH) || (cropW > cropH && outH > outW)) {
+        const t = outW;
+        outW = outH;
+        outH = t;
+      }
+    } else {
+      // หากข้ามการ Crop ให้ส่งออกตามขนาดต้นฉบับจริง เพื่อไม่ให้ภาพโดนบีบ
+      outW = srcW;
+      outH = srcH;
     }
   }
 
@@ -610,8 +654,8 @@ class WebGL2PhotoEnhancer {
       uniform vec2 u_uvOffset;
       void main() {
         vec2 uv = a_pos * 0.5 + 0.5;
+        uv.y = 1.0 - uv.y;
         v_uv = uv * u_uvScale + u_uvOffset;
-        v_uv.y = 1.0 - v_uv.y;
         gl_Position = vec4(a_pos, 0.0, 1.0);
       }
     `;
@@ -849,38 +893,34 @@ class WebGL2PhotoEnhancer {
     const prog = this.program;
     if (!gl || !prog) return null;
 
-    const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-    if (width > maxTex || height > maxTex) return null;
+    const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 4096;
+    let renderW = width;
+    let renderH = height;
+    if (renderW > maxTex || renderH > maxTex) {
+      const scale = Math.min(maxTex / renderW, maxTex / renderH);
+      renderW = Math.max(16, Math.round(renderW * scale));
+      renderH = Math.max(16, Math.round(renderH * scale));
+    }
 
-    if (this.canvas.width !== width) this.canvas.width = width;
-    if (this.canvas.height !== height) this.canvas.height = height;
-    gl.viewport(0, 0, width, height);
+    if (this.canvas.width !== renderW) this.canvas.width = renderW;
+    if (this.canvas.height !== renderH) this.canvas.height = renderH;
+    gl.viewport(0, 0, renderW, renderH);
     gl.useProgram(prog);
 
-    // Direct GPU texture upload from <video> or <canvas> (avoids 48MB intermediate 2D canvases)
+    // Direct GPU texture upload from renderSource
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texImage);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
     gl.uniform1i(gl.getUniformLocation(prog, 'u_image'), 0);
-    const texelW = srcW && srcW > 0 ? srcW : width;
-    const texelH = srcH && srcH > 0 ? srcH : height;
+    const texelW = srcW && srcW > 0 ? srcW : renderW;
+    const texelH = srcH && srcH > 0 ? srcH : renderH;
     gl.uniform2f(gl.getUniformLocation(prog, 'u_texel'), 1 / texelW, 1 / texelH);
 
-    // Dynamic Crop UV Scale & Offset (e.g. 4:3, 16:9, 1:1, 1:2 หรือ 2:3 ส่วน)
-    const cropInfo = getCropDimensions(
-      texelW,
-      texelH,
-      settings.cropAspect,
-      undefined,
-      undefined,
-      settings.subjectAnchor,
-      settings.cropComposition,
-      settings.skipOverflowCrop ?? true
-    );
+    // Source is already cleanly cropped, so UV scale is 1.0 and offset is 0.0
     const uvScaleLoc = gl.getUniformLocation(prog, 'u_uvScale');
     const uvOffsetLoc = gl.getUniformLocation(prog, 'u_uvOffset');
-    if (uvScaleLoc) gl.uniform2f(uvScaleLoc, cropInfo.uvScale[0], cropInfo.uvScale[1]);
-    if (uvOffsetLoc) gl.uniform2f(uvOffsetLoc, cropInfo.uvOffset[0], cropInfo.uvOffset[1]);
+    if (uvScaleLoc) gl.uniform2f(uvScaleLoc, 1.0, 1.0);
+    if (uvOffsetLoc) gl.uniform2f(uvOffsetLoc, 0.0, 0.0);
 
     // Basic & Detail uniforms
     gl.uniform1f(gl.getUniformLocation(prog, 'u_bri'), (settings.brightness ?? 100) / 100);
@@ -1215,6 +1255,8 @@ function drawWatermarkOverlay(
   ctx.restore();
 }
 
+let sharedCropCanvas: HTMLCanvasElement | null = null;
+
 /**
  * Unified GPU + CPU Enhancement Pipeline (Single-Pass Direct Video-to-8K WebGL2)
  */
@@ -1230,13 +1272,52 @@ function renderEnhancedFrameToCanvas(
   const ctx = destCanvas.getContext('2d')!;
   const gpu = getGpuEnhancer();
 
+  let renderSource: HTMLVideoElement | HTMLCanvasElement = source;
+  let renderSrcW = srcW;
+  let renderSrcH = srcH;
+
+  // 1. True Image Cropping (ตัดส่วนภาพจริงตามอัตราส่วน ไม่บีบอัดชิ้นงาน 100%)
+  if (settings.cropAspect && settings.cropAspect !== 'none') {
+    const crop = getCropDimensions(
+      srcW,
+      srcH,
+      settings.cropAspect,
+      destW,
+      destH,
+      settings.subjectAnchor,
+      settings.cropComposition,
+      settings.skipOverflowCrop ?? true
+    );
+
+    if (!crop.skippedCrop) {
+      if (!sharedCropCanvas) sharedCropCanvas = document.createElement('canvas');
+      if (sharedCropCanvas.width !== crop.cropW) sharedCropCanvas.width = crop.cropW;
+      if (sharedCropCanvas.height !== crop.cropH) sharedCropCanvas.height = crop.cropH;
+      const cropCtx = sharedCropCanvas.getContext('2d', { willReadFrequently: true })!;
+      cropCtx.drawImage(
+        source,
+        crop.cropX,
+        crop.cropY,
+        crop.cropW,
+        crop.cropH,
+        0,
+        0,
+        crop.cropW,
+        crop.cropH
+      );
+      renderSource = sharedCropCanvas;
+      renderSrcW = crop.cropW;
+      renderSrcH = crop.cropH;
+    }
+  }
+
   // Fast Path: Single-Pass Direct GPU Video-to-Target Resolution + Color Grading + Sharpening
-  const gpuCanvas = gpu.render(source, destW, destH, settings, srcW, srcH);
+  const gpuCanvas = gpu.render(renderSource, destW, destH, settings, renderSrcW, renderSrcH);
   if (gpuCanvas) {
     ctx.drawImage(gpuCanvas, 0, 0, destW, destH);
   } else {
     // Fallback to CPU stepped upscale only if WebGL2 is unavailable
-    drawSteppedUpscale(source, srcW, srcH, ctx, destW, destH, 'none');
+    drawSteppedUpscale(renderSource, renderSrcW, renderSrcH, ctx, destW, destH, 'none');
   }
 
   // Draw Watermark Overlay if configured

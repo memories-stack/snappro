@@ -1007,71 +1007,103 @@ export default function App() {
     } else if (id !== 'custom') {
       setCropAspect('none');
     }
+    const firstReady = videos.find(v => v.width > 0);
+    const isPortrait = firstReady ? firstReady.height > firstReady.width : false;
+    const vw = firstReady ? firstReady.width : 1920;
+    const vh = firstReady ? firstReady.height : 1080;
+
     if (id === 'crop-4-3-auto') {
-      const firstReady = videos.find(v => v.width > 0);
-      const srcH = firstReady ? firstReady.height : 1080;
-      setOutputWidth(Math.round(srcH * (4 / 3)));
-      setOutputHeight(srcH);
+      if (isPortrait) {
+        setOutputWidth(vw);
+        setOutputHeight(Math.round(vw / (3 / 4)));
+      } else {
+        setOutputWidth(Math.round(vh * (4 / 3)));
+        setOutputHeight(vh);
+      }
     } else if (id === 'crop-2-3-auto') {
-      const firstReady = videos.find(v => v.width > 0);
-      const srcH = firstReady ? firstReady.height : 1080;
-      setOutputWidth(Math.round(srcH * (2 / 3)));
-      setOutputHeight(srcH);
+      if (isPortrait) {
+        setOutputWidth(vw);
+        setOutputHeight(Math.round(vw / (2 / 3)));
+      } else {
+        setOutputWidth(Math.round(vh * (3 / 2)));
+        setOutputHeight(vh);
+      }
     } else if (id === 'crop-1-2-auto') {
-      const firstReady = videos.find(v => v.width > 0);
-      const srcH = firstReady ? firstReady.height : 1080;
-      setOutputWidth(Math.round(srcH * (1 / 2)));
-      setOutputHeight(srcH);
+      if (isPortrait) {
+        setOutputWidth(vw);
+        setOutputHeight(Math.round(vw * 2));
+      } else {
+        setOutputWidth(Math.round(vh * 2));
+        setOutputHeight(vh);
+      }
     } else if (id === 'original') {
-      const firstReady = videos.find(v => v.width > 0);
-      setOutputWidth(firstReady ? firstReady.width : 1920);
-      setOutputHeight(firstReady ? firstReady.height : 1080);
+      setOutputWidth(vw);
+      setOutputHeight(vh);
     } else if (opt.w > 0) {
-      setOutputWidth(opt.w);
-      setOutputHeight(opt.h);
+      if (isPortrait && opt.w > opt.h) {
+        setOutputWidth(opt.h);
+        setOutputHeight(opt.w);
+      } else {
+        setOutputWidth(opt.w);
+        setOutputHeight(opt.h);
+      }
     }
   };
 
   // Crop Aspect change (e.g. 4:3, 2:3, 1:2, 16:9, 1:1)
   const handleCropAspectChange = (crop: CropAspect) => {
     setCropAspect(crop);
+    const firstReady = videos.find(v => v.width > 0);
+    const isPortrait = firstReady ? firstReady.height > firstReady.width : false;
+    const vw = firstReady ? firstReady.width : 1920;
+    const vh = firstReady ? firstReady.height : 1080;
+
     if (crop === '4:3') {
       if (sizeMode === 'fhd') {
         setSizeMode('crop-4-3-hd');
-        setOutputWidth(1440);
-        setOutputHeight(1080);
+        setOutputWidth(isPortrait ? 1080 : 1440);
+        setOutputHeight(isPortrait ? 1440 : 1080);
       } else if (sizeMode === '4k') {
         setSizeMode('crop-4-3-4k');
-        setOutputWidth(2880);
-        setOutputHeight(2160);
+        setOutputWidth(isPortrait ? 2160 : 2880);
+        setOutputHeight(isPortrait ? 2880 : 2160);
       } else if (sizeMode === '8k') {
         setSizeMode('crop-4-3-max');
-        setOutputWidth(5760);
-        setOutputHeight(4320);
+        setOutputWidth(isPortrait ? 4320 : 5760);
+        setOutputHeight(isPortrait ? 5760 : 4320);
       } else {
         setSizeMode('crop-4-3-auto');
-        const firstReady = videos.find(v => v.width > 0);
-        const srcH = firstReady ? firstReady.height : 1080;
-        setOutputWidth(Math.round(srcH * (4 / 3)));
-        setOutputHeight(srcH);
+        if (isPortrait) {
+          setOutputWidth(vw);
+          setOutputHeight(Math.round(vw / (3 / 4)));
+        } else {
+          setOutputWidth(Math.round(vh * (4 / 3)));
+          setOutputHeight(vh);
+        }
       }
     } else if (crop === '2:3') {
       setSizeMode('crop-2-3-auto');
-      const firstReady = videos.find(v => v.width > 0);
-      const srcH = firstReady ? firstReady.height : 1080;
-      setOutputWidth(Math.round(srcH * (2 / 3)));
-      setOutputHeight(srcH);
+      if (isPortrait) {
+        setOutputWidth(vw);
+        setOutputHeight(Math.round(vw / (2 / 3)));
+      } else {
+        setOutputWidth(Math.round(vh * (3 / 2)));
+        setOutputHeight(vh);
+      }
     } else if (crop === '1:2') {
       setSizeMode('crop-1-2-auto');
-      const firstReady = videos.find(v => v.width > 0);
-      const srcH = firstReady ? firstReady.height : 1080;
-      setOutputWidth(Math.round(srcH * (1 / 2)));
-      setOutputHeight(srcH);
+      if (isPortrait) {
+        setOutputWidth(vw);
+        setOutputHeight(Math.round(vw * 2));
+      } else {
+        setOutputWidth(Math.round(vh * 2));
+        setOutputHeight(vh);
+      }
     } else if (crop === 'none') {
       if (sizeMode.startsWith('crop-')) {
         setSizeMode('fhd');
-        setOutputWidth(1920);
-        setOutputHeight(1080);
+        setOutputWidth(isPortrait ? 1080 : 1920);
+        setOutputHeight(isPortrait ? 1920 : 1080);
       }
     }
   };
