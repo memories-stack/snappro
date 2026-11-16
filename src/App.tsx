@@ -2,6 +2,8 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   CapturedFrame,
   CaptureSettings,
+  CropAspect,
+  CropComposition,
   HSLChannelKey,
   ColorMixerSettings,
   ColorGradingSettings,
@@ -238,15 +240,22 @@ const I18N = {
 
 const SIZE_OPTIONS = [
   { id: 'original', labelKey: 'originalSize' as const, w: 0, h: 0 },
-  { id: 'fhd', label: 'Full HD (1920×1080)', w: 1920, h: 1080 },
-  { id: '4k', label: '4K UHD (3840×2160)', w: 3840, h: 2160 },
-  { id: '8k', label: '8K UHD (7680×4320)', w: 7680, h: 4320 },
-  { id: 'nikon-fx-l', label: 'Nikon FX-L (8256×4640)', w: 8256, h: 4640 },
-  { id: 'nikon-fx-m', label: 'Nikon FX-M (6192×3480)', w: 6192, h: 3480 },
-  { id: 'nikon-fx-s', label: 'Nikon FX-S (4128×2320)', w: 4128, h: 2320 },
-  { id: 'nikon-dx-l', label: 'Nikon DX-L (5408×3600)', w: 5408, h: 3600 },
-  { id: 'nikon-dx-m', label: 'Nikon DX-M (4048×2696)', w: 4048, h: 2696 },
-  { id: 'nikon-1-1', label: 'Nikon 1:1 (5504×5504)', w: 5504, h: 5504 },
+  { id: 'crop-4-3-auto', label: '📷 4:3 ขนาดปกติ (ตามต้นฉบับ)', w: 0, h: 0, crop: '4:3' as CropAspect },
+  { id: 'crop-4-3-hd', label: '📷 4:3 HD (1440×1080)', w: 1440, h: 1080, crop: '4:3' as CropAspect },
+  { id: 'crop-4-3-2k', label: '📷 4:3 2K (2048×1536)', w: 2048, h: 1536, crop: '4:3' as CropAspect },
+  { id: 'crop-4-3-4k', label: '📷 4:3 4K (2880×2160)', w: 2880, h: 2160, crop: '4:3' as CropAspect },
+  { id: 'crop-4-3-max', label: '📷 4:3 5.7K (5760×4320)', w: 5760, h: 4320, crop: '4:3' as CropAspect },
+  { id: 'crop-2-3-auto', label: '📷 2:3 ขนาดปกติ (ตามต้นฉบับ)', w: 0, h: 0, crop: '2:3' as CropAspect },
+  { id: 'crop-1-2-auto', label: '📷 1:2 แนวตั้ง (ตามต้นฉบับ)', w: 0, h: 0, crop: '1:2' as CropAspect },
+  { id: 'fhd', label: 'Full HD (1920×1080) • 16:9', w: 1920, h: 1080 },
+  { id: '4k', label: '4K UHD (3840×2160) • 16:9', w: 3840, h: 2160 },
+  { id: '8k', label: '8K UHD (7680×4320) • 16:9', w: 7680, h: 4320 },
+  { id: 'nikon-fx-l', label: 'Nikon FX-L (8256×4640) • 16:9', w: 8256, h: 4640 },
+  { id: 'nikon-fx-m', label: 'Nikon FX-M (6192×3480) • 16:9', w: 6192, h: 3480 },
+  { id: 'nikon-fx-s', label: 'Nikon FX-S (4128×2320) • 16:9', w: 4128, h: 2320 },
+  { id: 'nikon-dx-l', label: 'Nikon DX-L (5408×3600) • 3:2', w: 5408, h: 3600 },
+  { id: 'nikon-dx-m', label: 'Nikon DX-M (4048×2696) • 3:2', w: 4048, h: 2696 },
+  { id: 'nikon-1-1', label: 'Nikon 1:1 (5504×5504) • 1:1', w: 5504, h: 5504, crop: '1:1' as CropAspect },
   { id: 'custom', labelKey: 'customSize' as const, w: -1, h: -1 },
 ];
 
@@ -510,6 +519,13 @@ export default function App() {
   const [duplicateMode, setDuplicateMode] = useState<DuplicateMode>(
     () => savedInit.duplicateMode || 'skip'
   );
+  const [cropAspect, setCropAspect] = useState<CropAspect>(() => savedInit.cropAspect || 'none');
+  const [cropComposition, setCropComposition] = useState<CropComposition>(
+    () => savedInit.cropComposition || '1:2'
+  );
+  const [skipOverflowCrop, setSkipOverflowCrop] = useState<boolean>(
+    () => savedInit.skipOverflowCrop ?? true
+  );
 
   // Smart AI Capture Features (Best-Shot Search & Motion Trigger)
   const [filterBlur, setFilterBlur] = useState<boolean>(() => savedInit.filterBlur ?? true);
@@ -574,6 +590,9 @@ export default function App() {
           interval,
           speedConcurrency,
           duplicateMode,
+          cropAspect,
+          cropComposition,
+          skipOverflowCrop,
           filterBlur,
           sharpnessThreshold,
           smartBestShot,
@@ -614,6 +633,9 @@ export default function App() {
     interval,
     speedConcurrency,
     duplicateMode,
+    cropAspect,
+    cropComposition,
+    skipOverflowCrop,
     filterBlur,
     sharpnessThreshold,
     smartBestShot,
@@ -712,6 +734,9 @@ export default function App() {
       hdrOutput,
       maximizeCompatibility,
       keepAspectRatio: keepAspect,
+      cropAspect,
+      cropComposition,
+      skipOverflowCrop,
       pixelDensity,
       densityUnit,
       smartBestShot,
@@ -734,6 +759,9 @@ export default function App() {
       quality,
       format,
       keepAspect,
+      cropAspect,
+      cropComposition,
+      skipOverflowCrop,
       pixelDensity,
       densityUnit,
       smartBestShot,
@@ -974,13 +1002,77 @@ export default function App() {
     setSizeMode(id);
     const opt = SIZE_OPTIONS.find(o => o.id === id);
     if (!opt) return;
-    if (id === 'original') {
+    if ((opt as any).crop) {
+      setCropAspect((opt as any).crop);
+    } else if (id !== 'custom') {
+      setCropAspect('none');
+    }
+    if (id === 'crop-4-3-auto') {
+      const firstReady = videos.find(v => v.width > 0);
+      const srcH = firstReady ? firstReady.height : 1080;
+      setOutputWidth(Math.round(srcH * (4 / 3)));
+      setOutputHeight(srcH);
+    } else if (id === 'crop-2-3-auto') {
+      const firstReady = videos.find(v => v.width > 0);
+      const srcH = firstReady ? firstReady.height : 1080;
+      setOutputWidth(Math.round(srcH * (2 / 3)));
+      setOutputHeight(srcH);
+    } else if (id === 'crop-1-2-auto') {
+      const firstReady = videos.find(v => v.width > 0);
+      const srcH = firstReady ? firstReady.height : 1080;
+      setOutputWidth(Math.round(srcH * (1 / 2)));
+      setOutputHeight(srcH);
+    } else if (id === 'original') {
       const firstReady = videos.find(v => v.width > 0);
       setOutputWidth(firstReady ? firstReady.width : 1920);
       setOutputHeight(firstReady ? firstReady.height : 1080);
     } else if (opt.w > 0) {
       setOutputWidth(opt.w);
       setOutputHeight(opt.h);
+    }
+  };
+
+  // Crop Aspect change (e.g. 4:3, 2:3, 1:2, 16:9, 1:1)
+  const handleCropAspectChange = (crop: CropAspect) => {
+    setCropAspect(crop);
+    if (crop === '4:3') {
+      if (sizeMode === 'fhd') {
+        setSizeMode('crop-4-3-hd');
+        setOutputWidth(1440);
+        setOutputHeight(1080);
+      } else if (sizeMode === '4k') {
+        setSizeMode('crop-4-3-4k');
+        setOutputWidth(2880);
+        setOutputHeight(2160);
+      } else if (sizeMode === '8k') {
+        setSizeMode('crop-4-3-max');
+        setOutputWidth(5760);
+        setOutputHeight(4320);
+      } else {
+        setSizeMode('crop-4-3-auto');
+        const firstReady = videos.find(v => v.width > 0);
+        const srcH = firstReady ? firstReady.height : 1080;
+        setOutputWidth(Math.round(srcH * (4 / 3)));
+        setOutputHeight(srcH);
+      }
+    } else if (crop === '2:3') {
+      setSizeMode('crop-2-3-auto');
+      const firstReady = videos.find(v => v.width > 0);
+      const srcH = firstReady ? firstReady.height : 1080;
+      setOutputWidth(Math.round(srcH * (2 / 3)));
+      setOutputHeight(srcH);
+    } else if (crop === '1:2') {
+      setSizeMode('crop-1-2-auto');
+      const firstReady = videos.find(v => v.width > 0);
+      const srcH = firstReady ? firstReady.height : 1080;
+      setOutputWidth(Math.round(srcH * (1 / 2)));
+      setOutputHeight(srcH);
+    } else if (crop === 'none') {
+      if (sizeMode.startsWith('crop-')) {
+        setSizeMode('fhd');
+        setOutputWidth(1920);
+        setOutputHeight(1080);
+      }
     }
   };
 
@@ -1999,6 +2091,84 @@ export default function App() {
                   </div>
                 </div>
               )}
+
+              {/* Row 2.5: Crop Aspect & AI Smart Composition (1:2 ส่วน / 2:3 ส่วน / ข้ามหากเกินอัตราส่วน) */}
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                  padding: '7px 9px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255, 255, 255, 0.07)',
+                  borderRadius: 6,
+                  margin: '4px 0',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span className="cap-lbl" style={{ margin: 0, fontWeight: 600 }}>อัตราส่วน Crop</span>
+                  <div className="mini-pills">
+                    {(['none', '4:3', '2:3', '1:2', '1:1', '16:9'] as CropAspect[]).map(aspect => (
+                      <button
+                        key={aspect}
+                        type="button"
+                        className={`mini-pill ${cropAspect === aspect ? 'active' : ''}`}
+                        onClick={() => handleCropAspectChange(aspect)}
+                      >
+                        {aspect === 'none' ? 'ไม่ Crop' : aspect}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {cropAspect !== 'none' && (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 2 }}>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>สัดส่วนองค์ประกอบ</span>
+                      <div className="mini-pills">
+                        <button
+                          type="button"
+                          className={`mini-pill ${cropComposition === '1:2' ? 'active' : ''}`}
+                          onClick={() => setCropComposition('1:2')}
+                          title="จัดองค์ประกอบตัวแบบตามส่วน 1:2 (กึ่งกลางภาพ 50%)"
+                        >
+                          1:2 ส่วน (กึ่งกลาง)
+                        </button>
+                        <button
+                          type="button"
+                          className={`mini-pill ${cropComposition === '2:3' ? 'active' : ''}`}
+                          onClick={() => setCropComposition('2:3')}
+                          title="จัดองค์ประกอบตัวแบบตามส่วน 2:3 (จุดตัดเก้าช่อง Rule of Thirds)"
+                        >
+                          2:3 ส่วน (จุดตัดเก้าช่อง)
+                        </button>
+                      </div>
+                    </div>
+
+                    <label
+                      className="compact-check"
+                      style={{
+                        margin: 0,
+                        paddingTop: 3,
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={skipOverflowCrop}
+                        onChange={e => setSkipOverflowCrop(e.target.checked)}
+                      />
+                      <span style={{ color: skipOverflowCrop ? '#38bdf8' : '#94a3b8' }}>
+                        ⚡ เกินอัตราส่วนไม่ต้อง Crop (ข้ามไปปล่อยภาพปกติ)
+                      </span>
+                    </label>
+                  </>
+                )}
+              </div>
 
               {/* Row 3: Pixel Density (Topaz / Lightroom Style) */}
               <div className="pixel-density-box">

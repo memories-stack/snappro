@@ -126,12 +126,143 @@ export interface HistogramData {
   lum: number[];
 }
 
+export type CropAspect = 'none' | '4:3' | '16:9' | '3:2' | '2:3' | '1:1' | '9:16' | '1:2';
+export type CropComposition = '1:2' | '2:3'; // '1:2' = กึ่งกลาง 50%, '2:3' = จุดตัดเก้าช่อง 2/3 ส่วน (Rule of Thirds)
+
+export interface SubjectCentroid {
+  xNorm: number;
+  yNorm: number;
+  widthNorm?: number;
+  heightNorm?: number;
+}
+
+export function getCropDimensions(
+  srcW: number,
+  srcH: number,
+  cropAspect: CropAspect = 'none',
+  targetW?: number,
+  targetH?: number,
+  subjectAnchor?: SubjectCentroid,
+  composition: CropComposition = '1:2',
+  skipOverflowCrop: boolean = true
+): {
+  cropX: number;
+  cropY: number;
+  cropW: number;
+  cropH: number;
+  outW: number;
+  outH: number;
+  uvScale: [number, number];
+  uvOffset: [number, number];
+  skippedCrop: boolean;
+} {
+  let targetRatio = srcW / srcH;
+  if (cropAspect === '4:3') {
+    targetRatio = srcH > srcW ? 3 / 4 : 4 / 3;
+  } else if (cropAspect === '16:9') {
+    targetRatio = srcH > srcW ? 9 / 16 : 16 / 9;
+  } else if (cropAspect === '3:2') {
+    targetRatio = srcH > srcW ? 2 / 3 : 3 / 2;
+  } else if (cropAspect === '2:3') {
+    targetRatio = srcH > srcW ? 2 / 3 : 3 / 2;
+  } else if (cropAspect === '1:1') {
+    targetRatio = 1.0;
+  } else if (cropAspect === '9:16') {
+    targetRatio = 9 / 16;
+  } else if (cropAspect === '1:2') {
+    targetRatio = srcH > srcW ? 1 / 2 : 2 / 1;
+  }
+
+  let cropW = srcW;
+  let cropH = srcH;
+  const currentRatio = srcW / srcH;
+  let skippedCrop = false;
+
+  if (cropAspect !== 'none' && Math.abs(currentRatio - targetRatio) > 0.005) {
+    if (currentRatio > targetRatio) {
+      // Source is wider than target ratio: crop sides
+      cropW = Math.round(srcH * targetRatio);
+      cropH = srcH;
+    } else {
+      // Source is taller than target ratio: crop top/bottom
+      cropW = srcW;
+      cropH = Math.round(srcW / targetRatio);
+    }
+
+    // ตรวจสอบเงื่อนไข: เกินอัตราส่วน ให้ข้ามการ Crop (รักษาภาพเต็มต้นฉบับ)
+    if (skipOverflowCrop) {
+      const cropRatioOfSrc = (cropW * cropH) / (srcW * srcH);
+      const subjectExceeds =
+        subjectAnchor && subjectAnchor.widthNorm && subjectAnchor.widthNorm > (cropW / srcW) * 0.95;
+
+      if (subjectExceeds || cropRatioOfSrc < 0.45) {
+        // ข้ามการ Crop ปล่อยเป็นขนาดเต็มต้นฉบับ
+        cropW = srcW;
+        cropH = srcH;
+        skippedCrop = true;
+      }
+    }
+  } else {
+    skippedCrop = true;
+  }
+
+  let cropX = Math.round((srcW - cropW) / 2);
+  let cropY = Math.round((srcH - cropH) / 2);
+
+  if (!skippedCrop && subjectAnchor) {
+    const sX = subjectAnchor.xNorm;
+    const sY = subjectAnchor.yNorm;
+
+    // คำนวณตำแหน่งตามสัดส่วนองค์ประกอบภาพ (Composition Rule)
+    let anchorX = 0.5;
+    let anchorY = 0.45;
+
+    if (composition === '2:3') {
+      // สัดส่วน 2:3 ส่วน (Rule of Thirds): วางตัวแบบที่ 1/3 หรือ 2/3 ตามทิศทาง
+      anchorX = sX < 0.5 ? 0.333 : 0.667;
+      anchorY = 0.38; // สัดส่วนสายตาในแนวตั้ง 2:3 ส่วนจากด้านล่าง (1/3 จากด้านบน)
+    } else {
+      // สัดส่วน 1:2 ส่วน (Center): วางตัวแบบที่กึ่งกลาง 50%
+      anchorX = 0.5;
+      anchorY = 0.45;
+    }
+
+    const idealX = Math.round(srcW * sX - cropW * anchorX);
+    const idealY = Math.round(srcH * sY - cropH * anchorY);
+
+    cropX = Math.max(0, Math.min(srcW - cropW, idealX));
+    cropY = Math.max(0, Math.min(srcH - cropH, idealY));
+  }
+
+  let outW = cropW;
+  let outH = cropH;
+
+  if (targetW && targetH && targetW > 0 && targetH > 0) {
+    outW = targetW;
+    outH = targetH;
+    if ((cropH > cropW && outW > outH) || (cropW > cropH && outH > outW)) {
+      const t = outW;
+      outW = outH;
+      outH = t;
+    }
+  }
+
+  const uvScale: [number, number] = [cropW / srcW, cropH / srcH];
+  const uvOffset: [number, number] = [cropX / srcW, cropY / srcH];
+
+  return { cropX, cropY, cropW, cropH, outW, outH, uvScale, uvOffset, skippedCrop };
+}
+
 export interface CaptureSettings {
   outputWidth: number;
   outputHeight: number;
   quality: number;
   format: 'jpeg' | 'png' | 'webp';
   keepAspectRatio: boolean;
+  cropAspect?: CropAspect;
+  cropComposition?: CropComposition;
+  skipOverflowCrop?: boolean;
+  subjectAnchor?: SubjectCentroid;
   // Lightroom File Settings (Limit File Size To KB, Color Space, HDR, Compatibility)
   limitFileSize?: boolean;
   maxFileSizeKb?: number;
@@ -189,13 +320,19 @@ let sharedBeforeCanvas: HTMLCanvasElement | null = null;
 let sharedAfterCanvas: HTMLCanvasElement | null = null;
 
 /**
- * วัดความคมชัดของภาพ (Laplacian Variance Method) + คืนค่า Grayscale Thumb สำหรับตรวจจับการเคลื่อนไหว
+ * วัดความคมชัดของภาพ (Laplacian Variance Method) + AI วิเคราะห์ตำแหน่งตัวแบบและสัดส่วนองค์ประกอบ
  */
 export function analyzeFrameSharpnessAndGray(
   source: HTMLCanvasElement | HTMLVideoElement,
   srcW: number,
   srcH: number
-): { sharpness: number; grayThumb: Float32Array; thumbW: number; thumbH: number } {
+): {
+  sharpness: number;
+  grayThumb: Float32Array;
+  thumbW: number;
+  thumbH: number;
+  subjectCentroid: SubjectCentroid;
+} {
   const scale = Math.min(1, 360 / Math.max(srcW, srcH));
   const sw = Math.max(16, Math.round(srcW * scale));
   const sh = Math.max(16, Math.round(srcH * scale));
@@ -226,6 +363,14 @@ export function analyzeFrameSharpnessAndGray(
   const yMinCenter = Math.floor(sh * 0.15);
   const yMaxCenter = Math.ceil(sh * 0.85);
 
+  let weightedX = 0;
+  let weightedY = 0;
+  let totalSaliencyWeight = 0;
+  let minSalX = sw;
+  let maxSalX = 0;
+  let minSalY = sh;
+  let maxSalY = 0;
+
   for (let y = 1; y < sh - 1; y++) {
     const inCenterY = y >= yMinCenter && y <= yMaxCenter;
     for (let x = 1; x < sw - 1; x++) {
@@ -242,16 +387,47 @@ export function analyzeFrameSharpnessAndGray(
       sum += weightedLap;
       sumSq += weightedLap * weightedLap;
       count++;
+
+      // Subject Saliency (Human Skin Tone + Edge Contrast Magnitude)
+      const pIdx = idx * 4;
+      const r = data[pIdx];
+      const g = data[pIdx + 1];
+      const b = data[pIdx + 2];
+      const isSkin = r > 60 && g > 40 && b > 20 && (r - g) >= 8 && (r - b) >= 12 && (r - g) < 130;
+      const edgeMag = Math.abs(lap);
+      const salWeight = edgeMag * (isSkin ? 3.0 : 1.0);
+
+      if (salWeight > 12) {
+        weightedX += x * salWeight;
+        weightedY += y * salWeight;
+        totalSaliencyWeight += salWeight;
+        if (x < minSalX) minSalX = x;
+        if (x > maxSalX) maxSalX = x;
+        if (y < minSalY) minSalY = y;
+        if (y > maxSalY) maxSalY = y;
+      }
     }
   }
 
   const mean = sum / count;
   const variance = sumSq / count - mean * mean;
+
+  const xNorm = totalSaliencyWeight > 0 ? (weightedX / totalSaliencyWeight) / sw : 0.5;
+  const yNorm = totalSaliencyWeight > 0 ? (weightedY / totalSaliencyWeight) / sh : 0.5;
+
+  const subjectCentroid: SubjectCentroid = {
+    xNorm,
+    yNorm,
+    widthNorm: totalSaliencyWeight > 0 && maxSalX > minSalX ? (maxSalX - minSalX) / sw : undefined,
+    heightNorm: totalSaliencyWeight > 0 && maxSalY > minSalY ? (maxSalY - minSalY) / sh : undefined,
+  };
+
   return {
     sharpness: Math.round(variance * 10) / 10,
     grayThumb: gray,
     thumbW: sw,
     thumbH: sh,
+    subjectCentroid,
   };
 }
 
@@ -430,8 +606,11 @@ class WebGL2PhotoEnhancer {
     const vsSource = `#version 300 es
       in vec2 a_pos;
       out vec2 v_uv;
+      uniform vec2 u_uvScale;
+      uniform vec2 u_uvOffset;
       void main() {
-        v_uv = a_pos * 0.5 + 0.5;
+        vec2 uv = a_pos * 0.5 + 0.5;
+        v_uv = uv * u_uvScale + u_uvOffset;
         v_uv.y = 1.0 - v_uv.y;
         gl_Position = vec4(a_pos, 0.0, 1.0);
       }
@@ -686,6 +865,22 @@ class WebGL2PhotoEnhancer {
     const texelW = srcW && srcW > 0 ? srcW : width;
     const texelH = srcH && srcH > 0 ? srcH : height;
     gl.uniform2f(gl.getUniformLocation(prog, 'u_texel'), 1 / texelW, 1 / texelH);
+
+    // Dynamic Crop UV Scale & Offset (e.g. 4:3, 16:9, 1:1, 1:2 หรือ 2:3 ส่วน)
+    const cropInfo = getCropDimensions(
+      texelW,
+      texelH,
+      settings.cropAspect,
+      undefined,
+      undefined,
+      settings.subjectAnchor,
+      settings.cropComposition,
+      settings.skipOverflowCrop ?? true
+    );
+    const uvScaleLoc = gl.getUniformLocation(prog, 'u_uvScale');
+    const uvOffsetLoc = gl.getUniformLocation(prog, 'u_uvOffset');
+    if (uvScaleLoc) gl.uniform2f(uvScaleLoc, cropInfo.uvScale[0], cropInfo.uvScale[1]);
+    if (uvOffsetLoc) gl.uniform2f(uvOffsetLoc, cropInfo.uvOffset[0], cropInfo.uvOffset[1]);
 
     // Basic & Detail uniforms
     gl.uniform1f(gl.getUniformLocation(prog, 'u_bri'), (settings.brightness ?? 100) / 100);
@@ -1101,23 +1296,38 @@ export function renderComparisonPreview(
 ): { beforeUrl: string; afterUrl: string; histogram: HistogramData } | null {
   if (!video.videoWidth || !video.videoHeight) return null;
 
+  const analysis = analyzeFrameSharpnessAndGray(video, video.videoWidth, video.videoHeight);
+  const crop = getCropDimensions(
+    video.videoWidth,
+    video.videoHeight,
+    settings.cropAspect,
+    undefined,
+    undefined,
+    analysis.subjectCentroid,
+    settings.cropComposition,
+    settings.skipOverflowCrop ?? true
+  );
   const maxDim = 960;
-  const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight));
-  const w = Math.max(64, Math.round(video.videoWidth * scale));
-  const h = Math.max(64, Math.round(video.videoHeight * scale));
+  const scale = Math.min(1, maxDim / Math.max(crop.cropW, crop.cropH));
+  const w = Math.max(64, Math.round(crop.cropW * scale));
+  const h = Math.max(64, Math.round(crop.cropH * scale));
 
   // Before Canvas (Reused for zero-GC live preview)
   if (!sharedBeforeCanvas) sharedBeforeCanvas = document.createElement('canvas');
   sharedBeforeCanvas.width = w;
   sharedBeforeCanvas.height = h;
   const ctxBefore = sharedBeforeCanvas.getContext('2d')!;
-  ctxBefore.drawImage(video, 0, 0, w, h);
+  ctxBefore.drawImage(video, crop.cropX, crop.cropY, crop.cropW, crop.cropH, 0, 0, w, h);
 
   // After Canvas (GPU Accelerated + Watermark)
   if (!sharedAfterCanvas) sharedAfterCanvas = document.createElement('canvas');
   sharedAfterCanvas.width = w;
   sharedAfterCanvas.height = h;
-  renderEnhancedFrameToCanvas(video, video.videoWidth, video.videoHeight, sharedAfterCanvas, w, h, settings);
+  const previewSettings: CaptureSettings = {
+    ...settings,
+    subjectAnchor: analysis.subjectCentroid,
+  };
+  renderEnhancedFrameToCanvas(video, video.videoWidth, video.videoHeight, sharedAfterCanvas, w, h, previewSettings);
 
   const ctxAfter = sharedAfterCanvas.getContext('2d', { willReadFrequently: true })!;
   const histogram = computeHistogram(ctxAfter, w, h);
@@ -1299,25 +1509,46 @@ export function captureCurrentFrame(
   const origW = video.videoWidth;
   const origH = video.videoHeight;
 
-  const sharpness = precomputedSharpness ?? measureSharpness(video, origW, origH);
+  const analysis = analyzeFrameSharpnessAndGray(video, origW, origH);
+  const sharpness = precomputedSharpness ?? analysis.sharpness;
   const isSharp = sharpness >= sharpnessThreshold;
 
   let outW = settings.outputWidth;
   let outH = settings.outputHeight;
+  let frameSettings: CaptureSettings = settings;
 
-  // Smart Auto-Orientation: Match preset long-edge with video orientation (Portrait vs Landscape)
-  if ((origH > origW && outW > outH) || (origW > origH && outH > outW)) {
-    const tmp = outW;
-    outW = outH;
-    outH = tmp;
-  }
+  if (settings.cropAspect && settings.cropAspect !== 'none') {
+    const crop = getCropDimensions(
+      origW,
+      origH,
+      settings.cropAspect,
+      outW,
+      outH,
+      analysis.subjectCentroid,
+      settings.cropComposition,
+      settings.skipOverflowCrop ?? true
+    );
+    outW = crop.outW;
+    outH = crop.outH;
+    frameSettings = {
+      ...settings,
+      subjectAnchor: analysis.subjectCentroid,
+    };
+  } else {
+    // Smart Auto-Orientation: Match preset long-edge with video orientation (Portrait vs Landscape)
+    if ((origH > origW && outW > outH) || (origW > origH && outH > outW)) {
+      const tmp = outW;
+      outW = outH;
+      outH = tmp;
+    }
 
-  if (settings.keepAspectRatio) {
-    const ratio = origW / origH;
-    if (outW / outH > ratio) {
-      outW = Math.round(outH * ratio);
-    } else {
-      outH = Math.round(outW / ratio);
+    if (settings.keepAspectRatio) {
+      const ratio = origW / origH;
+      if (outW / outH > ratio) {
+        outW = Math.round(outH * ratio);
+      } else {
+        outH = Math.round(outW / ratio);
+      }
     }
   }
 
@@ -1339,7 +1570,7 @@ export function captureCurrentFrame(
   canvas.width = outW;
   canvas.height = outH;
 
-  renderEnhancedFrameToCanvas(video, origW, origH, canvas, outW, outH, settings);
+  renderEnhancedFrameToCanvas(video, origW, origH, canvas, outW, outH, frameSettings);
 
   const mimeType = `image/${settings.format}`;
   const dataUrl = canvas.toDataURL(mimeType, settings.quality);
@@ -1477,22 +1708,42 @@ export async function autoCapture(
       // then run 21MP JPEG compression + disk write in parallel with the next video seek!
       let outW = settings.outputWidth;
       let outH = settings.outputHeight;
-      if ((origH > origW && outW > outH) || (origW > origH && outH > outW)) {
-        const tmp = outW;
-        outW = outH;
-        outH = tmp;
-      }
-      if (settings.keepAspectRatio) {
-        const ratio = origW / origH;
-        if (outW / outH > ratio) {
-          outW = Math.round(outH * ratio);
-        } else {
-          outH = Math.round(outW / ratio);
+      let frameSettings: CaptureSettings = settings;
+      if (settings.cropAspect && settings.cropAspect !== 'none') {
+        const crop = getCropDimensions(
+          origW,
+          origH,
+          settings.cropAspect,
+          outW,
+          outH,
+          bestAnalysis ? bestAnalysis.subjectCentroid : undefined,
+          settings.cropComposition,
+          settings.skipOverflowCrop ?? true
+        );
+        outW = crop.outW;
+        outH = crop.outH;
+        frameSettings = {
+          ...settings,
+          subjectAnchor: bestAnalysis ? bestAnalysis.subjectCentroid : undefined,
+        };
+      } else {
+        if ((origH > origW && outW > outH) || (origW > origH && outH > outW)) {
+          const tmp = outW;
+          outW = outH;
+          outH = tmp;
+        }
+        if (settings.keepAspectRatio) {
+          const ratio = origW / origH;
+          if (outW / outH > ratio) {
+            outW = Math.round(outH * ratio);
+          } else {
+            outH = Math.round(outW / ratio);
+          }
         }
       }
       if (activeCanvas.width !== outW) activeCanvas.width = outW;
       if (activeCanvas.height !== outH) activeCanvas.height = outH;
-      renderEnhancedFrameToCanvas(video, origW, origH, activeCanvas, outW, outH, settings);
+      renderEnhancedFrameToCanvas(video, origW, origH, activeCanvas, outW, outH, frameSettings);
 
       const capturedTime = video.currentTime;
       const capturedSharpness = bestAnalysis.sharpness;
