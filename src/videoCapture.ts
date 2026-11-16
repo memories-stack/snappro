@@ -141,6 +141,7 @@ export interface SubjectCentroid {
   yNorm: number;
   widthNorm?: number;
   heightNorm?: number;
+  headYNorm?: number; // สัดส่วนตำแหน่งจุดบนสุดของศีรษะ (Head Top 0..1)
 }
 
 export function getCropDimensions(
@@ -297,8 +298,20 @@ export function getCropDimensions(
       anchorY = 0.45;
     }
 
-    const idealX = Math.round(srcW * sX - cropW * anchorX);
-    const idealY = Math.round(srcH * sY - cropH * anchorY);
+    let idealX = Math.round(srcW * sX - cropW * anchorX);
+    let idealY = Math.round(srcH * sY - cropH * anchorY);
+
+    // Smart Standing Subject Headroom Protection (สำหรับภาพคนยืน/นักวิ่งแนวตั้ง):
+    // ตรวจจับจุดบนสุดของศีรษะ แล้วการันตีพื้นที่เหนือศีรษะ (Headroom) 10%
+    // ป้องกันไม่ให้ขอบบนของกรอบตัดโดนเส้นผมหรือศีรษะของนักวิ่ง 100%
+    if (isPortrait && subjectAnchor.headYNorm !== undefined && subjectAnchor.headYNorm > 0.05) {
+      const headY = Math.round(srcH * subjectAnchor.headYNorm);
+      const minHeadroom = Math.round(cropH * 0.10);
+      const maxCropYToProtectHead = Math.max(0, headY - minHeadroom);
+      if (idealY > maxCropYToProtectHead) {
+        idealY = maxCropYToProtectHead;
+      }
+    }
 
     cropX = Math.max(0, Math.min(srcW - cropW, idealX));
     cropY = Math.max(0, Math.min(srcH - cropH, idealY));
@@ -449,6 +462,7 @@ export function analyzeFrameSharpnessAndGray(
   let maxSalX = 0;
   let minSalY = sh;
   let maxSalY = 0;
+  const skinCountPerRow = new Uint16Array(sh);
 
   for (let y = 1; y < sh - 1; y++) {
     const inCenterY = y >= yMinCenter && y <= yMaxCenter;
@@ -473,6 +487,9 @@ export function analyzeFrameSharpnessAndGray(
       const g = data[pIdx + 1];
       const b = data[pIdx + 2];
       const isSkin = r > 60 && g > 40 && b > 20 && (r - g) >= 8 && (r - b) >= 12 && (r - g) < 130;
+      if (isSkin) {
+        skinCountPerRow[y]++;
+      }
       const edgeMag = Math.abs(lap);
       const salWeight = edgeMag * (isSkin ? 3.0 : 1.0);
 
@@ -494,11 +511,21 @@ export function analyzeFrameSharpnessAndGray(
   const xNorm = totalSaliencyWeight > 0 ? (weightedX / totalSaliencyWeight) / sw : 0.5;
   const yNorm = totalSaliencyWeight > 0 ? (weightedY / totalSaliencyWeight) / sh : 0.5;
 
+  let topmostSkinRow = -1;
+  for (let y = 1; y < sh - 1; y++) {
+    if (skinCountPerRow[y] >= 3) {
+      topmostSkinRow = y;
+      break;
+    }
+  }
+  const headYNorm = topmostSkinRow > 0 ? Math.max(0, (topmostSkinRow - sh * 0.04) / sh) : undefined;
+
   const subjectCentroid: SubjectCentroid = {
     xNorm,
     yNorm,
     widthNorm: totalSaliencyWeight > 0 && maxSalX > minSalX ? (maxSalX - minSalX) / sw : undefined,
     heightNorm: totalSaliencyWeight > 0 && maxSalY > minSalY ? (maxSalY - minSalY) / sh : undefined,
+    headYNorm,
   };
 
   return {

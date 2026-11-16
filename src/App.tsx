@@ -808,7 +808,7 @@ function InteractiveCropEditor({
     }
   };
 
-  // 🎯 AI Auto-Center Subject: ค้นหาตำแหน่งนักวิ่ง/ตัวแบบและเลื่อนกรอบ Crop มาวางตรงกลางตัวแบบทันที
+  // 🎯 AI Auto-Center Subject: ค้นหาตำแหน่งนักวิ่ง/ตัวแบบและเลื่อนกรอบ Crop มาวางตรงกลางตัวแบบ พร้อมการันตีพื้นที่เหนือศีรษะ (Headroom)
   const handleAiCenterSubject = () => {
     const vid = videoRef.current;
     if (!vid) return;
@@ -817,9 +817,20 @@ function InteractiveCropEditor({
       const analysis = analyzeFrameSharpnessAndGray(vid, vw, vh);
       if (analysis && analysis.subjectCentroid) {
         const sc = analysis.subjectCentroid;
-        // จัดให้ตำแหน่งกึ่งกลางของกรอบตรงกับ centroid ของตัวแบบ
         const newX = Math.max(0, Math.min(1 - crop.w, sc.xNorm - crop.w / 2));
-        const newY = Math.max(0, Math.min(1 - crop.h, sc.yNorm - crop.h / 2));
+        let newY = Math.max(0, Math.min(1 - crop.h, sc.yNorm - crop.h / 2));
+
+        // Smart Standing Subject Headroom Protection:
+        // หากเป็นวิดีโอแนวตั้ง (9:16) ให้จัดกรอบโดยเว้นพื้นที่เหนือศีรษะ (Headroom) 10%
+        // เพื่อให้เห็นคนยืนเต็มตัวสวยงาม ไม่ตัดโดนศีรษะหรือเส้นผม
+        if (isPortrait && sc.headYNorm !== undefined && sc.headYNorm > 0.05) {
+          const minHeadroomNorm = crop.h * 0.10;
+          const maxAllowedY = Math.max(0, sc.headYNorm - minHeadroomNorm);
+          if (newY > maxAllowedY) {
+            newY = maxAllowedY;
+          }
+        }
+
         const nextCrop = { ...crop, x: newX, y: newY };
         setCrop(nextCrop);
         onCropChange(nextCrop);
