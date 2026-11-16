@@ -808,8 +808,8 @@ function InteractiveCropEditor({
     }
   };
 
-  // 🎯 AI Auto-Center Subject: ค้นหาตำแหน่งนักวิ่ง/ตัวแบบและเลื่อนกรอบ Crop มาวางตรงกลางตัวแบบ พร้อมการันตีพื้นที่เหนือศีรษะ (Headroom)
-  const handleAiCenterSubject = () => {
+  // 🎯 AI Auto-Center Subject: รองรับทั้งโหมด "วัดใบหน้าเป็นหลัก (face)" และ "จัดคนอยู่กึ่งกลางเต็มตัว (body)"
+  const handleAiCenterSubject = (aiMode: 'face' | 'body' = 'face') => {
     const vid = videoRef.current;
     if (!vid) return;
     setIsAiScanning(true);
@@ -817,23 +817,29 @@ function InteractiveCropEditor({
       const analysis = analyzeFrameSharpnessAndGray(vid, vw, vh);
       if (analysis && analysis.subjectCentroid) {
         const sc = analysis.subjectCentroid;
-        const newX = Math.max(0, Math.min(1 - crop.w, sc.xNorm - crop.w / 2));
-        let newY = Math.max(0, Math.min(1 - crop.h, sc.yNorm - crop.h / 2));
+        const targetX = aiMode === 'face' ? (sc.faceXNorm ?? sc.xNorm) : sc.xNorm;
+        const newX = Math.max(0, Math.min(1 - crop.w, targetX - crop.w / 2));
+        const headNorm = sc.headYNorm ?? Math.max(0.12, sc.yNorm - 0.34);
 
-        // Smart Standing Subject Headroom Protection:
-        // หากเป็นวิดีโอแนวตั้ง (9:16) ให้จัดกรอบโดยเว้นพื้นที่เหนือศีรษะ (Headroom) 10%
-        // เพื่อให้เห็นคนยืนเต็มตัวสวยงาม ไม่ตัดโดนศีรษะหรือเส้นผม
-        if (isPortrait && sc.headYNorm !== undefined && sc.headYNorm > 0.05) {
-          const minHeadroomNorm = crop.h * 0.10;
-          const maxAllowedY = Math.max(0, sc.headYNorm - minHeadroomNorm);
-          if (newY > maxAllowedY) {
-            newY = maxAllowedY;
+        let newY = Math.max(0, Math.min(1 - crop.h, sc.yNorm - crop.h / 2));
+        if (isPortrait) {
+          if (aiMode === 'face') {
+            // 👤 วัดใบหน้าเป็นหลัก: ล็อคพื้นที่เหนือศีรษะ ~7.2% ของความสูงกรอบ Crop
+            newY = Math.max(0, Math.min(1 - crop.h, headNorm - crop.h * 0.072));
+          } else {
+            // 🧍 คนอยู่กึ่งกลางเต็มตัว: คำนวณจุดกึ่งกลางตั้งแต่ศีรษะจรดปลายเท้า
+            const estFeetNorm = Math.min(0.89, headNorm + 0.65);
+            const bodyCenterNorm = (headNorm + estFeetNorm) * 0.5;
+            newY = Math.max(0, Math.min(1 - crop.h, bodyCenterNorm - crop.h * 0.5));
+            const maxAllowedY = Math.max(0, headNorm - crop.h * 0.068);
+            if (newY > maxAllowedY) newY = maxAllowedY;
           }
         }
 
         const nextCrop = { ...crop, x: newX, y: newY };
         setCrop(nextCrop);
         onCropChange(nextCrop);
+        onCropCompositionChange(aiMode === 'face' ? 'face' : '1:2');
       }
     } catch (e) {
       console.warn('AI detect failed:', e);
@@ -970,11 +976,21 @@ function InteractiveCropEditor({
           <button
             type="button"
             className="crop-action-btn ai-btn"
-            onClick={handleAiCenterSubject}
+            onClick={() => handleAiCenterSubject('face')}
             disabled={isAiScanning}
-            title="ใช้อัลกอริทึมวิเคราะห์หาตัวแบบ (นักวิ่ง) แล้วจัดกรอบมาไว้ตรงกลางอัตโนมัติ"
+            title="AI วัดใบหน้าและศีรษะเป็นหลัก พร้อมเว้นพื้นที่เหนือศีรษะอัตโนมัติ (หัวไม่ขาด 100%)"
           >
-            {isAiScanning ? '⏳ AI กำลังค้นหา...' : '🎯 AI จัดตัวแบบ'}
+            {isAiScanning ? '⏳...' : '👤 AI วัดหน้าเป็นหลัก'}
+          </button>
+          <button
+            type="button"
+            className="crop-action-btn ai-btn"
+            style={{ background: 'linear-gradient(135deg, #0284c7, #2563eb)', borderColor: '#0284c7' }}
+            onClick={() => handleAiCenterSubject('body')}
+            disabled={isAiScanning}
+            title="AI คำนวณความสูงตั้งแต่ศีรษะจรดปลายเท้า แล้ววางตัวแบบให้อยู่กึ่งกลางเฟรม"
+          >
+            🧍 AI คนกึ่งกลาง
           </button>
           <button
             type="button"
@@ -982,7 +998,7 @@ function InteractiveCropEditor({
             onClick={handleCenterCrop}
             title="จัดกรอบไว้กึ่งกลางภาพพอดี"
           >
-            ⟲ จัดกึ่งกลาง
+            ⟲ กึ่งกลางจอ
           </button>
           <button
             type="button"
@@ -1229,7 +1245,7 @@ export default function App() {
   );
   const [cropAspect, setCropAspect] = useState<CropAspect>(() => savedInit.cropAspect || 'none');
   const [cropComposition, setCropComposition] = useState<CropComposition>(
-    () => savedInit.cropComposition || '1:2'
+    () => savedInit.cropComposition || 'face'
   );
   const [skipOverflowCrop, setSkipOverflowCrop] = useState<boolean>(
     () => savedInit.skipOverflowCrop ?? true
@@ -2921,23 +2937,40 @@ export default function App() {
                 {cropAspect !== 'none' && (
                   <>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 2 }}>
-                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>สัดส่วนองค์ประกอบ</span>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>AI จับบุคคล</span>
                       <div className="mini-pills">
                         <button
                           type="button"
-                          className={`mini-pill ${cropComposition === '1:2' ? 'active' : ''}`}
-                          onClick={() => setCropComposition('1:2')}
-                          title="จัดองค์ประกอบตัวแบบตามส่วน 1:2 (กึ่งกลางภาพ 50%)"
+                          className={`mini-pill ${cropComposition === 'face' ? 'active' : ''}`}
+                          onClick={() => {
+                            setCropComposition('face');
+                            setCustomCrop(null);
+                          }}
+                          title="AI วัดใบหน้าและศีรษะเป็นหลัก เว้นระยะเหนือศีรษะอัตโนมัติ (หัวไม่ขาด 100%)"
                         >
-                          1:2 ส่วน (กึ่งกลาง)
+                          👤 วัดหน้าเป็นหลัก
+                        </button>
+                        <button
+                          type="button"
+                          className={`mini-pill ${cropComposition === '1:2' ? 'active' : ''}`}
+                          onClick={() => {
+                            setCropComposition('1:2');
+                            setCustomCrop(null);
+                          }}
+                          title="AI จัดตัวแบบคนยืนเต็มตัวให้อยู่กึ่งกลาง 50% (1:2 ส่วน)"
+                        >
+                          🧍 คนกึ่งกลาง (1:2)
                         </button>
                         <button
                           type="button"
                           className={`mini-pill ${cropComposition === '2:3' ? 'active' : ''}`}
-                          onClick={() => setCropComposition('2:3')}
+                          onClick={() => {
+                            setCropComposition('2:3');
+                            setCustomCrop(null);
+                          }}
                           title="จัดองค์ประกอบตัวแบบตามส่วน 2:3 (จุดตัดเก้าช่อง Rule of Thirds)"
                         >
-                          2:3 ส่วน (จุดตัดเก้าช่อง)
+                          📐 2:3 ส่วน
                         </button>
                       </div>
                     </div>

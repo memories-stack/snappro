@@ -127,7 +127,7 @@ export interface HistogramData {
 }
 
 export type CropAspect = 'none' | '4:3' | '16:9' | '3:2' | '2:3' | '1:1' | '9:16' | '1:2';
-export type CropComposition = '1:2' | '2:3'; // '1:2' = กึ่งกลาง 50%, '2:3' = จุดตัดเก้าช่อง 2/3 ส่วน (Rule of Thirds)
+export type CropComposition = 'face' | '1:2' | '2:3'; // 'face' = วัดใบหน้าเป็นหลัก, '1:2' = คนอยู่กึ่งกลาง 50%, '2:3' = จุดตัดเก้าช่อง (Rule of Thirds)
 
 export interface NormalizedCropRect {
   x: number; // 0..1 (สัดส่วนซ้าย)
@@ -142,6 +142,7 @@ export interface SubjectCentroid {
   widthNorm?: number;
   heightNorm?: number;
   headYNorm?: number; // สัดส่วนตำแหน่งจุดบนสุดของศีรษะ (Head Top 0..1)
+  faceXNorm?: number; // สัดส่วนตำแหน่งกึ่งกลางใบหน้าแนวนอน (Face Center X 0..1)
 }
 
 export function getCropDimensions(
@@ -281,32 +282,50 @@ export function getCropDimensions(
   let cropY = Math.round((srcH - cropH) / 2);
 
   if (!skippedCrop && subjectAnchor) {
-    const sX = subjectAnchor.xNorm;
+    const sX = subjectAnchor.faceXNorm ?? subjectAnchor.xNorm;
     const sY = subjectAnchor.yNorm;
+    const headNorm = subjectAnchor.headYNorm ?? Math.max(0.12, sY - 0.34);
+    const headY = Math.round(srcH * headNorm);
 
-    // คำนวณตำแหน่งตามสัดส่วนองค์ประกอบภาพ (Composition Rule)
-    let anchorX = 0.5;
-    let anchorY = 0.45;
+    let idealX = Math.round(srcW * sX - cropW * 0.5);
+    let idealY = Math.round((srcH - cropH) / 2);
 
-    if (composition === '2:3') {
-      // สัดส่วน 2:3 ส่วน (Rule of Thirds): วางตัวแบบที่ 1/3 หรือ 2/3
-      anchorX = sX < 0.5 ? 0.333 : 0.667;
-      anchorY = 0.38; // สัดส่วนสายตาในแนวตั้ง 2:3 ส่วนจากด้านล่าง (1/3 จากด้านบน)
+    if (composition === 'face') {
+      // 👤 โหมดวัดใบหน้าเป็นหลัก (AI Face-Priority & Headroom Lock):
+      // ยึดตำแหน่งศีรษะและใบหน้าเป็นจุดอ้างอิงหลัก พร้อมเว้น Headroom ~7.2% เสมอ
+      idealX = Math.round(srcW * sX - cropW * 0.5);
+      if (isPortrait) {
+        idealY = Math.round(headY - cropH * 0.072);
+      } else {
+        idealY = Math.round(headY - cropH * 0.10);
+      }
+    } else if (composition === '2:3') {
+      // 📐 โหมดจุดตัดเก้าช่อง 2:3 (AI Rule of Thirds):
+      const anchorX = sX < 0.5 ? 0.333 : 0.667;
+      idealX = Math.round(srcW * sX - cropW * anchorX);
+      if (isPortrait) {
+        const eyeLineY = headY + Math.round(srcH * 0.055);
+        idealY = Math.round(eyeLineY - cropH * 0.20);
+      } else {
+        idealY = Math.round(srcH * sY - cropH * 0.38);
+      }
     } else {
-      // สัดส่วน 1:2 ส่วน (Center): วางตัวแบบที่กึ่งกลาง 50%
-      anchorX = 0.5;
-      anchorY = 0.45;
+      // 🧍 โหมดคนอยู่กึ่งกลางเต็มตัว 1:2 (AI Full-Body Standing Center):
+      // คำนวณความสูงตั้งแต่ศีรษะจรดปลายเท้า แล้ววางตัวแบบให้อยู่กึ่งกลาง 50% พอดี
+      idealX = Math.round(srcW * subjectAnchor.xNorm - cropW * 0.5);
+      if (isPortrait) {
+        const estFeetY = Math.min(Math.round(srcH * 0.89), headY + Math.round(srcH * 0.65));
+        const bodyCenterY = (headY + estFeetY) * 0.5;
+        idealY = Math.round(bodyCenterY - cropH * 0.5);
+      } else {
+        idealY = Math.round(srcH * sY - cropH * 0.48);
+      }
     }
 
-    let idealX = Math.round(srcW * sX - cropW * anchorX);
-    let idealY = Math.round(srcH * sY - cropH * anchorY);
-
-    // Smart Standing Subject Headroom Protection (สำหรับภาพคนยืน/นักวิ่งแนวตั้ง):
-    // ตรวจจับจุดบนสุดของศีรษะ แล้วการันตีพื้นที่เหนือศีรษะ (Headroom) 10%
-    // ป้องกันไม่ให้ขอบบนของกรอบตัดโดนเส้นผมหรือศีรษะของนักวิ่ง 100%
-    if (isPortrait && subjectAnchor.headYNorm !== undefined && subjectAnchor.headYNorm > 0.05) {
-      const headY = Math.round(srcH * subjectAnchor.headYNorm);
-      const minHeadroom = Math.round(cropH * 0.10);
+    // Smart Standing Subject Headroom Protection (การันตีพื้นที่เหนือศีรษะ 100% ทุกโหมด):
+    // ป้องกันไม่ให้ขอบบนของกรอบตัดโดนเส้นผมหรือศีรษะของนักวิ่งแม้จะวิ่งเข้ามาใกล้กล้อง
+    if (isPortrait && headNorm > 0.03) {
+      const minHeadroom = Math.round(cropH * 0.068);
       const maxCropYToProtectHead = Math.max(0, headY - minHeadroom);
       if (idealY > maxCropYToProtectHead) {
         idealY = maxCropYToProtectHead;
@@ -330,6 +349,15 @@ export function getCropDimensions(
         const t = outW;
         outW = outH;
         outH = t;
+      }
+      // บังคับให้อัตราส่วน outW:outH ตรงกับ cropW:cropH 100% เพื่อป้องกันภาพบี้เมื่อเลือก Preset ข้ามสัดส่วน
+      const cropRatio = cropW / cropH;
+      if (Math.abs(outW / outH - cropRatio) > 0.01) {
+        if (outW / outH > cropRatio) {
+          outW = Math.round(outH * cropRatio);
+        } else {
+          outH = Math.round(outW / cropRatio);
+        }
       }
     } else {
       // หากข้ามการ Crop ให้ส่งออกตามขนาดต้นฉบับจริง เพื่อไม่ให้ภาพโดนบีบ
@@ -462,7 +490,8 @@ export function analyzeFrameSharpnessAndGray(
   let maxSalX = 0;
   let minSalY = sh;
   let maxSalY = 0;
-  const skinCountPerRow = new Uint16Array(sh);
+  const absLapBuf = new Uint8Array(sw * sh);
+  const faceSkinMask = new Uint8Array(sw * sh);
 
   for (let y = 1; y < sh - 1; y++) {
     const inCenterY = y >= yMinCenter && y <= yMaxCenter;
@@ -487,10 +516,14 @@ export function analyzeFrameSharpnessAndGray(
       const g = data[pIdx + 1];
       const b = data[pIdx + 2];
       const isSkin = r > 60 && g > 40 && b > 20 && (r - g) >= 8 && (r - b) >= 12 && (r - g) < 130;
-      if (isSkin) {
-        skinCountPerRow[y]++;
+      // Strict daylight human face skin filter (ignores dark brown tree trunks/branches in background)
+      const isFaceSkin =
+        r >= 102 && g >= 62 && b >= 42 && (r - g) >= 14 && (r - g) <= 95 && (r - b) >= 24;
+      if (isFaceSkin) {
+        faceSkinMask[idx] = 1;
       }
       const edgeMag = Math.abs(lap);
+      absLapBuf[idx] = edgeMag > 255 ? 255 : Math.round(edgeMag);
       const salWeight = edgeMag * (isSkin ? 3.0 : 1.0);
 
       if (salWeight > 12) {
@@ -511,14 +544,59 @@ export function analyzeFrameSharpnessAndGray(
   const xNorm = totalSaliencyWeight > 0 ? (weightedX / totalSaliencyWeight) / sw : 0.5;
   const yNorm = totalSaliencyWeight > 0 ? (weightedY / totalSaliencyWeight) / sh : 0.5;
 
-  let topmostSkinRow = -1;
-  for (let y = 1; y < sh - 1; y++) {
-    if (skinCountPerRow[y] >= 3) {
-      topmostSkinRow = y;
-      break;
+  // AI Face & Forehead Detector (ค้นหาตำแหน่งใบหน้าจริงที่อยู่ในระยะโฟกัสคมชัด):
+  const fxMin = Math.floor(sw * 0.18);
+  const fxMax = Math.ceil(sw * 0.82);
+  const fyMin = Math.floor(sh * 0.08);
+  const fyMax = Math.floor(sh * 0.55);
+  let faceTopRow = -1;
+  let faceCenterX = sw * xNorm;
+
+  for (let y = fyMin; y < fyMax; y++) {
+    let cnt0 = 0;
+    let cnt1 = 0;
+    let minX0 = sw;
+    let maxX0 = 0;
+    let sumX0 = 0;
+    const rowOff0 = y * sw;
+    const rowOff1 = (y + 1) * sw;
+    for (let x = fxMin; x < fxMax; x++) {
+      if (faceSkinMask[rowOff0 + x]) {
+        cnt0++;
+        sumX0 += x;
+        if (x < minX0) minX0 = x;
+        if (x > maxX0) maxX0 = x;
+      }
+      if (faceSkinMask[rowOff1 + x]) {
+        cnt1++;
+      }
+    }
+    if (cnt0 >= 5 && cnt1 >= 5 && maxX0 - minX0 < sw * 0.28) {
+      // ตรวจสอบความคมชัดบริเวณใบหน้า/ดวงตา/เส้นผม เพื่อตัดฉากหลังที่เบลอ (Bokeh) ออก
+      const by0 = Math.max(1, y - 3);
+      const by1 = Math.min(sh - 1, y + 6);
+      const bx0 = Math.max(1, minX0 - 3);
+      const bx1 = Math.min(sw - 1, maxX0 + 3);
+      let sharpCnt = 0;
+      let totalBox = 0;
+      for (let by = by0; by < by1; by++) {
+        const bOff = by * sw;
+        for (let bx = bx0; bx < bx1; bx++) {
+          totalBox++;
+          if (absLapBuf[bOff + bx] > 9) sharpCnt++;
+        }
+      }
+      if (totalBox > 0 && sharpCnt / totalBox > 0.12) {
+        faceTopRow = y;
+        faceCenterX = sumX0 / cnt0;
+        break;
+      }
     }
   }
-  const headYNorm = topmostSkinRow > 0 ? Math.max(0, (topmostSkinRow - sh * 0.04) / sh) : undefined;
+
+  const headYNorm =
+    faceTopRow > 0 ? Math.max(0.04, faceTopRow / sh - 0.042) : undefined;
+  const faceXNorm = faceTopRow > 0 ? faceCenterX / sw : undefined;
 
   const subjectCentroid: SubjectCentroid = {
     xNorm,
@@ -526,6 +604,7 @@ export function analyzeFrameSharpnessAndGray(
     widthNorm: totalSaliencyWeight > 0 && maxSalX > minSalX ? (maxSalX - minSalX) / sw : undefined,
     heightNorm: totalSaliencyWeight > 0 && maxSalY > minSalY ? (maxSalY - minSalY) / sh : undefined,
     headYNorm,
+    faceXNorm,
   };
 
   return {
@@ -1572,7 +1651,8 @@ export async function captureCurrentFrameAsync(
   const origW = video.videoWidth;
   const origH = video.videoHeight;
 
-  const sharpness = precomputedSharpness ?? measureSharpness(video, origW, origH);
+  const analysis = analyzeFrameSharpnessAndGray(video, origW, origH);
+  const sharpness = precomputedSharpness ?? analysis.sharpness;
   const isSharp = sharpness >= sharpnessThreshold;
 
   let outW = settings.outputWidth;
@@ -1586,13 +1666,17 @@ export async function captureCurrentFrameAsync(
       settings.cropAspect,
       outW,
       outH,
-      undefined,
+      analysis.subjectCentroid,
       settings.cropComposition,
       settings.skipOverflowCrop ?? true,
       settings.customCrop
     );
     outW = crop.outW;
     outH = crop.outH;
+    frameSettings = {
+      ...settings,
+      subjectAnchor: analysis.subjectCentroid,
+    };
   } else {
     // Smart Auto-Orientation: Match preset long-edge with video orientation (Portrait vs Landscape)
     if ((origH > origW && outW > outH) || (origW > origH && outH > outW)) {
