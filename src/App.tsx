@@ -246,22 +246,22 @@ const I18N = {
 
 const SIZE_OPTIONS = [
   { id: 'original', labelKey: 'originalSize' as const, w: 0, h: 0 },
-  { id: 'crop-4-3-auto', label: '📷 4:3 ขนาดปกติ (ตามต้นฉบับ)', w: 0, h: 0, crop: '4:3' as CropAspect },
-  { id: 'crop-4-3-hd', label: '📷 4:3 HD (1440×1080)', w: 1440, h: 1080, crop: '4:3' as CropAspect },
-  { id: 'crop-4-3-2k', label: '📷 4:3 2K (2048×1536)', w: 2048, h: 1536, crop: '4:3' as CropAspect },
-  { id: 'crop-4-3-4k', label: '📷 4:3 4K (2880×2160)', w: 2880, h: 2160, crop: '4:3' as CropAspect },
-  { id: 'crop-4-3-max', label: '📷 4:3 5.7K (5760×4320)', w: 5760, h: 4320, crop: '4:3' as CropAspect },
-  { id: 'crop-2-3-auto', label: '📷 2:3 ขนาดปกติ (ตามต้นฉบับ)', w: 0, h: 0, crop: '2:3' as CropAspect },
-  { id: 'crop-1-2-auto', label: '📷 1:2 แนวตั้ง (ตามต้นฉบับ)', w: 0, h: 0, crop: '1:2' as CropAspect },
-  { id: 'fhd', label: 'Full HD (1920×1080) • 16:9', w: 1920, h: 1080 },
-  { id: '4k', label: '4K UHD (3840×2160) • 16:9', w: 3840, h: 2160 },
-  { id: '8k', label: '8K UHD (7680×4320) • 16:9', w: 7680, h: 4320 },
-  { id: 'nikon-fx-l', label: 'Nikon FX-L (8256×4640) • 16:9', w: 8256, h: 4640 },
-  { id: 'nikon-fx-m', label: 'Nikon FX-M (6192×3480) • 16:9', w: 6192, h: 3480 },
-  { id: 'nikon-fx-s', label: 'Nikon FX-S (4128×2320) • 16:9', w: 4128, h: 2320 },
-  { id: 'nikon-dx-l', label: 'Nikon DX-L (5408×3600) • 3:2', w: 5408, h: 3600 },
-  { id: 'nikon-dx-m', label: 'Nikon DX-M (4048×2696) • 3:2', w: 4048, h: 2696 },
-  { id: 'nikon-1-1', label: 'Nikon 1:1 (5504×5504) • 1:1', w: 5504, h: 5504, crop: '1:1' as CropAspect },
+  { id: 'crop-2-3-auto', label: '📷 3:2 / 2:3 ขนาดต้นฉบับ (1080×1620)', w: 0, h: 0, crop: '3:2' as CropAspect },
+  { id: 'nikon-dx-s', label: '📷 Nikon DX-S • 3:2 (1800×2704)', w: 2704, h: 1800, crop: '3:2' as CropAspect },
+  { id: 'nikon-dx-m', label: '📷 Nikon DX-M • 3:2 (2696×4048)', w: 4048, h: 2696, crop: '3:2' as CropAspect },
+  { id: 'nikon-dx-l', label: '📷 Nikon DX-L • 3:2 (3600×5408)', w: 5408, h: 3600, crop: '3:2' as CropAspect },
+  { id: 'nikon-fx-s', label: '📷 Nikon FX-S • 3:2 (2752×4128)', w: 4128, h: 2752, crop: '3:2' as CropAspect },
+  { id: 'nikon-fx-m', label: '📷 Nikon FX-M • 3:2 (4128×6192)', w: 6192, h: 4128, crop: '3:2' as CropAspect },
+  { id: 'nikon-fx-l', label: '📷 Nikon FX-L • 3:2 (5504×8256)', w: 8256, h: 5504, crop: '3:2' as CropAspect },
+  { id: 'crop-4-3-auto', label: '📷 4:3 / 3:4 ขนาดต้นฉบับ (1080×1440)', w: 0, h: 0, crop: '4:3' as CropAspect },
+  { id: 'crop-4-3-hd', label: '📷 4:3 HD (1080×1440)', w: 1440, h: 1080, crop: '4:3' as CropAspect },
+  { id: 'crop-4-3-2k', label: '📷 4:3 2K (1536×2048)', w: 2048, h: 1536, crop: '4:3' as CropAspect },
+  { id: 'crop-4-3-4k', label: '📷 4:3 4K (2160×2880)', w: 2880, h: 2160, crop: '4:3' as CropAspect },
+  { id: 'crop-4-3-max', label: '📷 4:3 5.7K (4320×5760)', w: 5760, h: 4320, crop: '4:3' as CropAspect },
+  { id: 'nikon-1-1', label: '📷 Nikon 1:1 (5504×5504) • 1:1', w: 5504, h: 5504, crop: '1:1' as CropAspect },
+  { id: 'fhd', label: 'Full HD (1920×1080) • 16:9 / 9:16', w: 1920, h: 1080 },
+  { id: '4k', label: '4K UHD (3840×2160) • 16:9 / 9:16', w: 3840, h: 2160 },
+  { id: '8k', label: '8K UHD (7680×4320) • 16:9 / 9:16', w: 7680, h: 4320 },
   { id: 'custom', labelKey: 'customSize' as const, w: -1, h: -1 },
 ];
 
@@ -566,13 +566,59 @@ function InteractiveCropEditor({
   const [crop, setCrop] = useState<NormalizedCropRect>(() => {
     return customCrop || computeDefaultCrop();
   });
+  const [detectedHeadPx, setDetectedHeadPx] = useState<number | null>(null);
 
-  // ซิงค์กับ customCrop จากภายนอก
+  // ซิงค์กับ customCrop จากภายนอก หรือคำนวณตาม AI อัตโนมัติเมื่ออยู่ในโหมด AI Auto (customCrop === null)
   useEffect(() => {
     if (customCrop) {
       setCrop(customCrop);
+      return;
     }
-  }, [customCrop]);
+    const vid = videoRef.current;
+    if (!vid || vid.readyState < 2) {
+      setCrop(computeDefaultCrop());
+      return;
+    }
+    try {
+      const analysis = analyzeFrameSharpnessAndGray(vid, vw, vh);
+      const sc = analysis.subjectCentroid;
+      if (sc.headYNorm !== undefined) {
+        setDetectedHeadPx(Math.round(sc.headYNorm * vh));
+      } else {
+        setDetectedHeadPx(Math.round(Math.max(0.12, sc.yNorm - 0.34) * vh));
+      }
+      const activeAspect: CropAspect =
+        cropAspectLock === '3:2'
+          ? '3:2'
+          : cropAspectLock === '4:3'
+          ? '4:3'
+          : cropAspectLock === '16:9'
+          ? '16:9'
+          : cropAspectLock === '1:1'
+          ? '1:1'
+          : cropAspect !== 'none'
+          ? cropAspect
+          : '3:2';
+      const aiDim = getCropDimensions(
+        vw,
+        vh,
+        activeAspect,
+        undefined,
+        undefined,
+        sc,
+        cropComposition,
+        false
+      );
+      setCrop({
+        x: aiDim.cropX / vw,
+        y: aiDim.cropY / vh,
+        w: aiDim.cropW / vw,
+        h: aiDim.cropH / vh,
+      });
+    } catch {
+      setCrop(computeDefaultCrop());
+    }
+  }, [customCrop, currentTime, cropAspectLock, cropAspect, cropComposition, computeDefaultCrop, videoRef, vw, vh]);
 
   // สังเกตขนาด Stage เพื่อคำนวณพื้นที่จัดวาง Canvas ให้พอดี
   useEffect(() => {
@@ -808,41 +854,12 @@ function InteractiveCropEditor({
     }
   };
 
-  // 🎯 AI Auto-Center Subject: รองรับทั้งโหมด "วัดใบหน้าเป็นหลัก (face)" และ "จัดคนอยู่กึ่งกลางเต็มตัว (body)"
+  // 🎯 AI Auto-Center Subject: เปิดโหมดให้ AI วัดจากหัว/ผมขึ้นไปอัตโนมัติทุกเฟรม (ปลดล็อค customCrop)
   const handleAiCenterSubject = (aiMode: 'face' | 'body' = 'face') => {
-    const vid = videoRef.current;
-    if (!vid) return;
     setIsAiScanning(true);
     try {
-      const analysis = analyzeFrameSharpnessAndGray(vid, vw, vh);
-      if (analysis && analysis.subjectCentroid) {
-        const sc = analysis.subjectCentroid;
-        const targetX = aiMode === 'face' ? (sc.faceXNorm ?? sc.xNorm) : sc.xNorm;
-        const newX = Math.max(0, Math.min(1 - crop.w, targetX - crop.w / 2));
-        const headNorm = sc.headYNorm ?? Math.max(0.12, sc.yNorm - 0.34);
-
-        let newY = Math.max(0, Math.min(1 - crop.h, sc.yNorm - crop.h / 2));
-        if (isPortrait) {
-          if (aiMode === 'face') {
-            // 👤 วัดใบหน้าเป็นหลัก: ล็อคพื้นที่เหนือศีรษะ ~7.2% ของความสูงกรอบ Crop
-            newY = Math.max(0, Math.min(1 - crop.h, headNorm - crop.h * 0.072));
-          } else {
-            // 🧍 คนอยู่กึ่งกลางเต็มตัว: คำนวณจุดกึ่งกลางตั้งแต่ศีรษะจรดปลายเท้า
-            const estFeetNorm = Math.min(0.89, headNorm + 0.65);
-            const bodyCenterNorm = (headNorm + estFeetNorm) * 0.5;
-            newY = Math.max(0, Math.min(1 - crop.h, bodyCenterNorm - crop.h * 0.5));
-            const maxAllowedY = Math.max(0, headNorm - crop.h * 0.068);
-            if (newY > maxAllowedY) newY = maxAllowedY;
-          }
-        }
-
-        const nextCrop = { ...crop, x: newX, y: newY };
-        setCrop(nextCrop);
-        onCropChange(nextCrop);
-        onCropCompositionChange(aiMode === 'face' ? 'face' : '1:2');
-      }
-    } catch (e) {
-      console.warn('AI detect failed:', e);
+      onCropCompositionChange(aiMode === 'face' ? 'face' : '1:2');
+      onCropChange(null); // ปล่อยให้ AI ปรับตามหัว/ผมอัตโนมัติในทุกเฟรมของทุกคลิป!
     } finally {
       setIsAiScanning(false);
     }
@@ -859,44 +876,26 @@ function InteractiveCropEditor({
     onCropChange(nextCrop);
   };
 
-  // เปลี่ยนโหมดอัตราส่วน (4:3, 16:9, 3:2, 1:1, Free)
+  // เปลี่ยนโหมดอัตราส่วน (3:2, 4:3, 16:9, 1:1, Free) พร้อมเปิดให้ AI วัดจากหัว/ผมอัตโนมัติ
   const handleSelectAspectLock = (mode: '4:3' | '16:9' | '3:2' | '1:1' | 'free') => {
     onCropAspectLockChange(mode);
-    if (mode === '4:3') {
+    if (mode === '3:2') {
+      onCropAspectChange('3:2');
+      onCropChange(null);
+      return;
+    } else if (mode === '4:3') {
       onCropAspectChange('4:3');
+      onCropChange(null);
+      return;
     } else if (mode === '16:9') {
       onCropAspectChange('16:9');
-    } else if (mode === '3:2') {
-      onCropAspectChange('3:2');
+      onCropChange(null);
+      return;
     } else if (mode === '1:1') {
       onCropAspectChange('1:1');
+      onCropChange(null);
+      return;
     }
-
-    if (mode === 'free') return;
-
-    // คำนวณ ratio ใหม่
-    const newRatio = (() => {
-      switch (mode) {
-        case '4:3': return isPortrait ? 3 / 4 : 4 / 3;
-        case '16:9': return isPortrait ? 9 / 16 : 16 / 9;
-        case '3:2': return isPortrait ? 2 / 3 : 3 / 2;
-        case '1:1': return 1.0;
-        default: return 1.0;
-      }
-    })();
-
-    const videoRatio = vw / vh;
-    let newW = crop.w;
-    let newH = (newW * videoRatio) / newRatio;
-    if (newH > 1) {
-      newH = 1.0;
-      newW = (newH * newRatio) / videoRatio;
-    }
-    const newX = Math.max(0, Math.min(1 - newW, crop.x));
-    const newY = Math.max(0, Math.min(1 - newH, crop.y));
-    const nextCrop = { x: newX, y: newY, w: newW, h: newH };
-    setCrop(nextCrop);
-    onCropChange(nextCrop);
   };
 
   // สลับเล่น/หยุด
@@ -927,18 +926,26 @@ function InteractiveCropEditor({
       <div className="crop-top-bar">
         <div className="crop-top-left">
           <div className="crop-title-badge">
-            <span>✂️ ลาก Crop (Interactive)</span>
+            <span>✂️ พรีวิว & ลาก Crop</span>
           </div>
 
-          {/* อัตราส่วนล็อค (Lock Aspect Ratio) */}
+          {/* อัตราส่วนล็อค (Lock Aspect Ratio - เน้น 3:2 / 2:3 มาตรฐานกล้องเป็นหลัก) */}
           <div className="crop-ratio-group">
+            <button
+              type="button"
+              className={`crop-ratio-btn ${cropAspectLock === '3:2' ? 'active' : ''}`}
+              onClick={() => handleSelectAspectLock('3:2')}
+              title={isPortrait ? 'สัดส่วน 2:3 (3:2 มาตรฐานกล้อง Nikon Z8 แนวตั้ง)' : 'สัดส่วน 3:2 มาตรฐานกล้อง'}
+            >
+              📷 3:2 {isPortrait ? '(2:3 มาตรฐานกล้อง)' : '(มาตรฐานกล้อง)'}
+            </button>
             <button
               type="button"
               className={`crop-ratio-btn ${cropAspectLock === '4:3' ? 'active' : ''}`}
               onClick={() => handleSelectAspectLock('4:3')}
-              title={isPortrait ? 'ล็อค 3:4 (4:3 แนวตั้งสำหรับ Nikon Z8)' : 'ล็อค 4:3'}
+              title={isPortrait ? 'ล็อค 3:4 (4:3 แนวตั้ง)' : 'ล็อค 4:3'}
             >
-              📷 4:3 {isPortrait ? '(3:4 แนวตั้ง)' : ''}
+              4:3 {isPortrait ? '(3:4)' : ''}
             </button>
             <button
               type="button"
@@ -946,13 +953,6 @@ function InteractiveCropEditor({
               onClick={() => handleSelectAspectLock('16:9')}
             >
               16:9 {isPortrait ? '(9:16)' : ''}
-            </button>
-            <button
-              type="button"
-              className={`crop-ratio-btn ${cropAspectLock === '3:2' ? 'active' : ''}`}
-              onClick={() => handleSelectAspectLock('3:2')}
-            >
-              3:2
             </button>
             <button
               type="button"
@@ -978,9 +978,9 @@ function InteractiveCropEditor({
             className="crop-action-btn ai-btn"
             onClick={() => handleAiCenterSubject('face')}
             disabled={isAiScanning}
-            title="AI วัดใบหน้าและศีรษะเป็นหลัก พร้อมเว้นพื้นที่เหนือศีรษะอัตโนมัติ (หัวไม่ขาด 100%)"
+            title="AI วัดส่วนที่เหลือจากหัวหรือผมขึ้นไป แล้วปรับกรอบตามอัตราส่วนอัตโนมัติทุกเฟรม"
           >
-            {isAiScanning ? '⏳...' : '👤 AI วัดหน้าเป็นหลัก'}
+            {isAiScanning ? '⏳...' : '🤖 AI วัดหัว/ผมขึ้นไป (อัตโนมัติ)'}
           </button>
           <button
             type="button"
@@ -988,29 +988,9 @@ function InteractiveCropEditor({
             style={{ background: 'linear-gradient(135deg, #0284c7, #2563eb)', borderColor: '#0284c7' }}
             onClick={() => handleAiCenterSubject('body')}
             disabled={isAiScanning}
-            title="AI คำนวณความสูงตั้งแต่ศีรษะจรดปลายเท้า แล้ววางตัวแบบให้อยู่กึ่งกลางเฟรม"
+            title="AI คำนวณความสูงตั้งแต่ศีรษะจรดปลายเท้า แล้ววางตัวแบบให้อยู่กึ่งกลางเฟรมอัตโนมัติ"
           >
             🧍 AI คนกึ่งกลาง
-          </button>
-          <button
-            type="button"
-            className="crop-action-btn"
-            onClick={handleCenterCrop}
-            title="จัดกรอบไว้กึ่งกลางภาพพอดี"
-          >
-            ⟲ กึ่งกลางจอ
-          </button>
-          <button
-            type="button"
-            className="crop-action-btn"
-            onClick={() => {
-              const full: NormalizedCropRect = { x: 0, y: 0, w: 1, h: 1 };
-              setCrop(full);
-              onCropChange(full);
-            }}
-            title="ขยายกรอบเต็มเฟรม 100%"
-          >
-            เต็มจอ
           </button>
           <button
             type="button"
@@ -1026,7 +1006,7 @@ function InteractiveCropEditor({
             onClick={onClose}
             title="เสร็จสิ้นและกลับสู่หน้าเปรียบเทียบ ก่อน/หลัง"
           >
-            ✓ นำกรอบนี้ไปใช้ & ปิด
+            ✓ ตกลง & ปิด
           </button>
         </div>
       </div>
@@ -1089,7 +1069,7 @@ function InteractiveCropEditor({
         <div className="crop-preview-dock">
           <div className="crop-preview-header">
             <span>👀 ภาพพรีวิว Crop สด (Live)</span>
-            <span className="crop-preview-badge">100% Optical</span>
+            <span className="crop-preview-badge">{customCrop ? 'Manual' : '🤖 AI Auto'}</span>
           </div>
 
           <div
@@ -1105,17 +1085,25 @@ function InteractiveCropEditor({
               <span className="crop-preview-meta-val">{realCropW} × {realCropH} px</span>
             </div>
             <div className="crop-preview-meta-row">
+              <span className="crop-preview-meta-lbl">ส่วนที่เหลือเหนือหัว/ผม:</span>
+              <span className="crop-preview-meta-val" style={{ color: '#38bdf8' }}>
+                {detectedHeadPx !== null ? `${detectedHeadPx} px` : 'อัตโนมัติ'}
+              </span>
+            </div>
+            <div className="crop-preview-meta-row">
               <span className="crop-preview-meta-lbl">อัตราส่วน:</span>
               <span className="crop-preview-meta-val">
-                {cropAspectLock === '4:3'
+                {cropAspectLock === '3:2'
+                  ? isPortrait ? '2:3 (3:2 แนวตั้ง)' : '3:2 แนวนอน'
+                  : cropAspectLock === '4:3'
                   ? isPortrait ? '3:4 (4:3 แนวตั้ง)' : '4:3 แนวนอน'
                   : cropAspectLock}
               </span>
             </div>
             <div className="crop-preview-meta-row">
-              <span className="crop-preview-meta-lbl">สถานะชิ้นงาน:</span>
+              <span className="crop-preview-meta-lbl">โหมดติดตาม:</span>
               <span className="crop-preview-meta-val" style={{ color: '#10b981' }}>
-                ✓ คมชัด ไม่บีบอัด ไม่ยืด
+                {customCrop ? '✋ ล็อคตำแหน่งเอง' : '✓ AI ปรับตามหัว/ผมอัตโนมัติ'}
               </span>
             </div>
           </div>
@@ -1195,7 +1183,7 @@ export default function App() {
   const [activeVideoId, setActiveVideoId] = useState('');
   const [viewMode, setViewMode] = useState<'Split' | 'Video' | 'Crop'>('Split');
   const [customCrop, setCustomCrop] = useState<NormalizedCropRect | null>(null);
-  const [cropAspectLock, setCropAspectLock] = useState<'4:3' | '16:9' | '3:2' | '1:1' | 'free'>('4:3');
+  const [cropAspectLock, setCropAspectLock] = useState<'4:3' | '16:9' | '3:2' | '1:1' | 'free'>('3:2');
   const [toolTab, setToolTab] = useState<ToolTab>('grading');
   const [hslMode, setHslMode] = useState<HSLMode>('sat');
 
@@ -1726,10 +1714,15 @@ export default function App() {
   // Size change
   const handleSizeChange = (id: string) => {
     setSizeMode(id);
+    setCustomCrop(null); // ปลดล็อคกรอบ Manual เพื่อให้ AI วัดจากหัว/ผมขึ้นไปอัตโนมัติ
     const opt = SIZE_OPTIONS.find(o => o.id === id);
     if (!opt) return;
     if ((opt as any).crop) {
-      setCropAspect((opt as any).crop);
+      const c = (opt as any).crop as CropAspect;
+      setCropAspect(c);
+      if (c === '3:2' || c === '2:3') setCropAspectLock('3:2');
+      else if (c === '4:3') setCropAspectLock('4:3');
+      else if (c === '1:1') setCropAspectLock('1:1');
     } else if (id !== 'custom') {
       setCropAspect('none');
     }
@@ -1776,15 +1769,39 @@ export default function App() {
     }
   };
 
-  // Crop Aspect change (e.g. 4:3, 2:3, 1:2, 16:9, 1:1)
+  // Crop Aspect change (e.g. 3:2, 4:3, 1:1, 16:9)
   const handleCropAspectChange = (crop: CropAspect) => {
     setCropAspect(crop);
+    setCustomCrop(null); // ปล่อยให้ AI วัดจากหัว/ผมขึ้นไปอัตโนมัติ
+    if (crop === '3:2' || crop === '2:3') setCropAspectLock('3:2');
+    else if (crop === '4:3') setCropAspectLock('4:3');
+    else if (crop === '1:1') setCropAspectLock('1:1');
+    else if (crop === '16:9') setCropAspectLock('16:9');
+
     const firstReady = videos.find(v => v.width > 0);
     const isPortrait = firstReady ? firstReady.height > firstReady.width : false;
     const vw = firstReady ? firstReady.width : 1920;
     const vh = firstReady ? firstReady.height : 1080;
 
-    if (crop === '4:3') {
+    if (crop === '3:2' || crop === '2:3') {
+      if (sizeMode.startsWith('nikon-dx-') || sizeMode.startsWith('nikon-fx-')) {
+        // คงขนาดมาตรฐานกล้อง Nikon 3:2 ที่เลือกไว้
+        const opt = SIZE_OPTIONS.find(o => o.id === sizeMode);
+        if (opt && opt.w > 0) {
+          setOutputWidth(isPortrait ? opt.h : opt.w);
+          setOutputHeight(isPortrait ? opt.w : opt.h);
+        }
+      } else {
+        setSizeMode('crop-2-3-auto');
+        if (isPortrait) {
+          setOutputWidth(vw);
+          setOutputHeight(Math.round(vw / (2 / 3)));
+        } else {
+          setOutputWidth(Math.round(vh * (3 / 2)));
+          setOutputHeight(vh);
+        }
+      }
+    } else if (crop === '4:3') {
       if (sizeMode === 'fhd') {
         setSizeMode('crop-4-3-hd');
         setOutputWidth(isPortrait ? 1080 : 1440);
@@ -1807,15 +1824,6 @@ export default function App() {
           setOutputHeight(vh);
         }
       }
-    } else if (crop === '2:3') {
-      setSizeMode('crop-2-3-auto');
-      if (isPortrait) {
-        setOutputWidth(vw);
-        setOutputHeight(Math.round(vw / (2 / 3)));
-      } else {
-        setOutputWidth(Math.round(vh * (3 / 2)));
-        setOutputHeight(vh);
-      }
     } else if (crop === '1:2') {
       setSizeMode('crop-1-2-auto');
       if (isPortrait) {
@@ -1826,10 +1834,10 @@ export default function App() {
         setOutputHeight(vh);
       }
     } else if (crop === 'none') {
-      if (sizeMode.startsWith('crop-')) {
-        setSizeMode('fhd');
-        setOutputWidth(isPortrait ? 1080 : 1920);
-        setOutputHeight(isPortrait ? 1920 : 1080);
+      if (sizeMode.startsWith('crop-') || sizeMode.startsWith('nikon-')) {
+        setSizeMode('original');
+        setOutputWidth(vw);
+        setOutputHeight(vh);
       }
     }
   };
@@ -2921,23 +2929,47 @@ export default function App() {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span className="cap-lbl" style={{ margin: 0, fontWeight: 600 }}>อัตราส่วน Crop</span>
                   <div className="mini-pills">
-                    {(['none', '4:3', '2:3', '1:2', '1:1', '16:9'] as CropAspect[]).map(aspect => (
-                      <button
-                        key={aspect}
-                        type="button"
-                        className={`mini-pill ${cropAspect === aspect ? 'active' : ''}`}
-                        onClick={() => handleCropAspectChange(aspect)}
-                      >
-                        {aspect === 'none' ? 'ไม่ Crop' : aspect}
-                      </button>
-                    ))}
+                    {(['none', '3:2', '4:3', '1:1', '16:9'] as CropAspect[]).map(aspect => {
+                      const isActive =
+                        cropAspect === aspect || (aspect === '3:2' && cropAspect === '2:3');
+                      return (
+                        <button
+                          key={aspect}
+                          type="button"
+                          className={`mini-pill ${isActive ? 'active' : ''}`}
+                          onClick={() => handleCropAspectChange(aspect)}
+                        >
+                          {aspect === 'none'
+                            ? 'ไม่ Crop'
+                            : aspect === '3:2'
+                            ? '📷 3:2 (2:3)'
+                            : aspect}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
                 {cropAspect !== 'none' && (
                   <>
+                    <div
+                      style={{
+                        fontSize: '10.5px',
+                        color: '#10b981',
+                        background: 'rgba(16, 185, 129, 0.1)',
+                        border: '1px solid rgba(16, 185, 129, 0.25)',
+                        borderRadius: 4,
+                        padding: '4px 7px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <span>🤖 AI วัดส่วนที่เหลือจากหัว/ผมขึ้นไป ➔ ปรับตามสัดส่วนอัตโนมัติ</span>
+                    </div>
+
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 2 }}>
-                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>AI จับบุคคล</span>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>โหมด AI</span>
                       <div className="mini-pills">
                         <button
                           type="button"
@@ -2946,9 +2978,9 @@ export default function App() {
                             setCropComposition('face');
                             setCustomCrop(null);
                           }}
-                          title="AI วัดใบหน้าและศีรษะเป็นหลัก เว้นระยะเหนือศีรษะอัตโนมัติ (หัวไม่ขาด 100%)"
+                          title="AI วัดจากปลายผม/หมวก/ศีรษะขึ้นไปหาขอบบน แล้วเว้นระยะอัตโนมัติ (หัวไม่ขาด 100%)"
                         >
-                          👤 วัดหน้าเป็นหลัก
+                          👤 วัดหัว/ผมเป็นหลัก
                         </button>
                         <button
                           type="button"
@@ -2959,7 +2991,7 @@ export default function App() {
                           }}
                           title="AI จัดตัวแบบคนยืนเต็มตัวให้อยู่กึ่งกลาง 50% (1:2 ส่วน)"
                         >
-                          🧍 คนกึ่งกลาง (1:2)
+                          🧍 คนกึ่งกลาง
                         </button>
                         <button
                           type="button"
