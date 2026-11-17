@@ -26,10 +26,12 @@ import {
   formatDuration,
   dataUrlToBlob,
   renderComparisonPreview,
+  renderCachedClipPreview,
   invalidatePreviewCache,
+  clearClipPreviewCache,
 } from './videoCapture';
 
-export const APP_VERSION = '2.6.1';
+export const APP_VERSION = '2.6.2';
 const DEFAULT_UPDATE_MANIFEST_URL = 'https://memories-stack.github.io/snappro/version.json';
 
 interface RemoteUpdateManifest {
@@ -1475,6 +1477,10 @@ export default function App() {
       setPreviewUrl('');
       return;
     }
+    const cached = renderCachedClipPreview(activeVideo.id, buildCurrentSettings());
+    if (cached) {
+      setCompareData(cached);
+    }
     const url = URL.createObjectURL(activeVideo.file);
     setPreviewUrl(url);
     return () => {
@@ -1922,15 +1928,18 @@ export default function App() {
     }));
   };
 
-  // Live Comparison + Histogram Update (Instant RAF scheduling)
+  // Live Comparison + Histogram Update (Instant RAF scheduling + 0ms LRU Clip Cache)
   const updateComparison = useCallback(() => {
-    if (!previewVideoRef.current || isWorking) return;
+    if (isWorking) return;
     const vid = previewVideoRef.current;
-    if (vid.readyState >= 2 && !vid.seeking) {
-      const res = renderComparisonPreview(vid, buildCurrentSettings());
+    if (vid && vid.readyState >= 2 && !vid.seeking) {
+      const res = renderComparisonPreview(vid, buildCurrentSettings(), activeVideo?.id);
       if (res) setCompareData(res);
+    } else if (activeVideo?.id) {
+      const cached = renderCachedClipPreview(activeVideo.id, buildCurrentSettings());
+      if (cached) setCompareData(cached);
     }
-  }, [isWorking, buildCurrentSettings]);
+  }, [isWorking, buildCurrentSettings, activeVideo?.id]);
 
   useEffect(() => {
     const rafId = requestAnimationFrame(updateComparison);
@@ -2519,6 +2528,7 @@ export default function App() {
   }, [autoRefreshEnabled, isWorking, videos.length]);
 
   const resetAll = () => {
+    clearClipPreviewCache();
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     if (workVideoRef.current) {
       workVideoRef.current.removeAttribute('src');

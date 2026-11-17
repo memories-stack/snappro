@@ -1,8 +1,8 @@
 {
   "name": "autobots-recode",
   "private": true,
-  "version": "2.6.1",
-  "releaseNotes": "Faster Instant Preview Loading & Safe Frame Cache + AI Full-Body Symmetric Crop",
+  "version": "2.6.2",
+  "releaseNotes": "0ms Instant LRU Clip Preview Cache + Consistent Crop Fallback",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -1521,7 +1521,7 @@ let sharedCropCanvas: HTMLCanvasElement | null = null;
  * Unified GPU + CPU Enhancement Pipeline (Single-Pass Direct Video-to-8K WebGL2)
  */
 function renderEnhancedFrameToCanvas(
-  source: HTMLVideoElement,
+  source: HTMLVideoElement | HTMLCanvasElement,
   srcW: number,
   srcH: number,
   destCanvas: HTMLCanvasElement,
@@ -1546,7 +1546,7 @@ function renderEnhancedFrameToCanvas(
       destH,
       settings.subjectAnchor,
       settings.cropComposition,
-      settings.skipOverflowCrop ?? true,
+      settings.skipOverflowCrop ?? false,
       settings.customCrop
     );
 
@@ -1636,6 +1636,16 @@ let cachedPreviewAnalysis: ReturnType<typeof analyzeFrameSharpnessAndGray> | nul
 let cachedBeforeKey = '';
 let cachedBeforeUrl = '';
 
+interface ClipPreviewEntry {
+  canvas: HTMLCanvasElement;
+  srcW: number;
+  srcH: number;
+  analysis: ReturnType<typeof analyzeFrameSharpnessAndGray>;
+}
+
+const CLIP_PREVIEW_LRU_MAX = 20;
+const clipPreviewCache = new Map<string, ClipPreviewEntry>();
+
 export function invalidatePreviewCache() {
   cachedPreviewKey = '';
   cachedPreviewAnalysis = null;
@@ -1643,25 +1653,22 @@ export function invalidatePreviewCache() {
   cachedBeforeUrl = '';
 }
 
-/**
- * สร้างภาพเปรียบเทียบ Before / After + กราฟ Histogram แบบสดๆ (ปลอดภัยจากการ Seek 100%)
- */
-export function renderComparisonPreview(
-  video: HTMLVideoElement,
+export function clearClipPreviewCache() {
+  invalidatePreviewCache();
+  clipPreviewCache.clear();
+}
+
+function buildComparisonFromSource(
+  source: HTMLVideoElement | HTMLCanvasElement,
+  srcW: number,
+  srcH: number,
+  frameKey: string,
+  analysis: ReturnType<typeof analyzeFrameSharpnessAndGray>,
   settings: CaptureSettings
-): { beforeUrl: string; afterUrl: string; histogram: HistogramData } | null {
-  if (!video.videoWidth || !video.videoHeight || video.seeking || video.readyState < 2) return null;
-
-  const frameKey = `${video.currentSrc || video.src}|${video.currentTime.toFixed(3)}|${video.videoWidth}x${video.videoHeight}`;
-  if (cachedPreviewKey !== frameKey || !cachedPreviewAnalysis) {
-    cachedPreviewAnalysis = analyzeFrameSharpnessAndGray(video, video.videoWidth, video.videoHeight);
-    cachedPreviewKey = frameKey;
-  }
-  const analysis = cachedPreviewAnalysis;
-
+): { beforeUrl: string; afterUrl: string; histogram: HistogramData } {
   const crop = getCropDimensions(
-    video.videoWidth,
-    video.videoHeight,
+    srcW,
+    srcH,
     settings.cropAspect,
     undefined,
     undefined,
@@ -1682,7 +1689,7 @@ export function renderComparisonPreview(
     sharedBeforeCanvas.width = w;
     sharedBeforeCanvas.height = h;
     const ctxBefore = sharedBeforeCanvas.getContext('2d')!;
-    ctxBefore.drawImage(video, crop.cropX, crop.cropY, crop.cropW, crop.cropH, 0, 0, w, h);
+    ctxBefore.drawImage(source, crop.cropX, crop.cropY, crop.cropW, crop.cropH, 0, 0, w, h);
     cachedBeforeUrl = sharedBeforeCanvas.toDataURL('image/jpeg', 0.82);
     cachedBeforeKey = beforeKey;
   }
@@ -1695,7 +1702,7 @@ export function renderComparisonPreview(
     ...settings,
     subjectAnchor: analysis.subjectCentroid,
   };
-  renderEnhancedFrameToCanvas(video, video.videoWidth, video.videoHeight, sharedAfterCanvas, w, h, previewSettings);
+  renderEnhancedFrameToCanvas(source, srcW, srcH, sharedAfterCanvas, w, h, previewSettings);
 
   const ctxAfter = sharedAfterCanvas.getContext('2d', { willReadFrequently: true })!;
   const histogram = computeHistogram(ctxAfter, w, h);
@@ -1705,6 +1712,70 @@ export function renderComparisonPreview(
     afterUrl: sharedAfterCanvas.toDataURL('image/jpeg', 0.82),
     histogram,
   };
+}
+
+/**
+ * แสดงผลพรีวิวทันทีใน 0ms จาก LRU Cache สำหรับคลิปที่เคยเปิดดูแล้ว
+ */
+export function renderCachedClipPreview(
+  clipId: string,
+  settings: CaptureSettings
+): { beforeUrl: string; afterUrl: string; histogram: HistogramData } | null {
+  const entry = clipPreviewCache.get(clipId);
+  if (!entry) return null;
+  // Refresh LRU order
+  clipPreviewCache.delete(clipId);
+  clipPreviewCache.set(clipId, entry);
+  return buildComparisonFromSource(
+    entry.canvas,
+    entry.srcW,
+    entry.srcH,
+    `lru:${clipId}`,
+    entry.analysis,
+    settings
+  );
+}
+
+/**
+ * สร้างภาพเปรียบเทียบ Before / After + กราฟ Histogram แบบสดๆ (ปลอดภัยจากการ Seek 100%)
+ */
+export function renderComparisonPreview(
+  video: HTMLVideoElement,
+  settings: CaptureSettings,
+  clipId?: string
+): { beforeUrl: string; afterUrl: string; histogram: HistogramData } | null {
+  if (!video.videoWidth || !video.videoHeight || video.seeking || video.readyState < 2) return null;
+
+  const frameKey = `${video.currentSrc || video.src}|${video.currentTime.toFixed(3)}|${video.videoWidth}x${video.videoHeight}`;
+  if (cachedPreviewKey !== frameKey || !cachedPreviewAnalysis) {
+    cachedPreviewAnalysis = analyzeFrameSharpnessAndGray(video, video.videoWidth, video.videoHeight);
+    cachedPreviewKey = frameKey;
+  }
+  const analysis = cachedPreviewAnalysis;
+
+  // Store lightweight snapshot in LRU cache for instant 0ms switching back to this clip
+  if (clipId && video.currentTime < 0.5 && !clipPreviewCache.has(clipId)) {
+    const snapMax = 1080;
+    const snapScale = Math.min(1, snapMax / Math.max(video.videoWidth, video.videoHeight));
+    const sw = Math.max(64, Math.round(video.videoWidth * snapScale));
+    const sh = Math.max(64, Math.round(video.videoHeight * snapScale));
+    const snapCanvas = document.createElement('canvas');
+    snapCanvas.width = sw;
+    snapCanvas.height = sh;
+    snapCanvas.getContext('2d')!.drawImage(video, 0, 0, sw, sh);
+    if (clipPreviewCache.size >= CLIP_PREVIEW_LRU_MAX) {
+      const oldestKey = clipPreviewCache.keys().next().value;
+      if (oldestKey) clipPreviewCache.delete(oldestKey);
+    }
+    clipPreviewCache.set(clipId, {
+      canvas: snapCanvas,
+      srcW: sw,
+      srcH: sh,
+      analysis,
+    });
+  }
+
+  return buildComparisonFromSource(video, video.videoWidth, video.videoHeight, frameKey, analysis, settings);
 }
 
 /**
@@ -1812,7 +1883,7 @@ export async function captureCurrentFrameAsync(
       outH,
       analysis.subjectCentroid,
       settings.cropComposition,
-      settings.skipOverflowCrop ?? true,
+      settings.skipOverflowCrop ?? false,
       settings.customCrop
     );
     outW = crop.outW;
@@ -1916,7 +1987,7 @@ export function captureCurrentFrame(
       outH,
       analysis.subjectCentroid,
       settings.cropComposition,
-      settings.skipOverflowCrop ?? true,
+      settings.skipOverflowCrop ?? false,
       settings.customCrop
     );
     outW = crop.outW;
@@ -2109,7 +2180,7 @@ export async function autoCapture(
           outH,
           bestAnalysis ? bestAnalysis.subjectCentroid : undefined,
           settings.cropComposition,
-          settings.skipOverflowCrop ?? true,
+          settings.skipOverflowCrop ?? false,
           settings.customCrop
         );
         outW = crop.outW;
