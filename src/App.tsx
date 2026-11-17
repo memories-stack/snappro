@@ -2638,9 +2638,9 @@ export default function App() {
                   onSeeked={updateComparison}
                   style={{
                     width: '100%',
-                    display: viewMode === 'Crop' ? 'none' : 'block',
-                    maxHeight: viewMode === 'Video' ? 'calc(100vh - 180px)' : 36,
-                    height: viewMode === 'Video' ? '100%' : 36,
+                    display: viewMode === 'Video' ? 'block' : 'none',
+                    maxHeight: 'calc(100vh - 180px)',
+                    height: '100%',
                     borderRadius: 6,
                     background: '#000',
                     objectFit: 'contain',
