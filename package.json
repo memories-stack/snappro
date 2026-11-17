@@ -1,8 +1,8 @@
 {
   "name": "autobots-recode",
   "private": true,
-  "version": "2.6.2",
-  "releaseNotes": "0ms Instant LRU Clip Preview Cache + Consistent Crop Fallback",
+  "version": "2.6.3",
+  "releaseNotes": "Balanced Event-Logo Top/Bottom Headroom & Footroom Margin (5.5% - 13.5%)",
   "type": "module",
   "scripts": {
     "dev": "vite",

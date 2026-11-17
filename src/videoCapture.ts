@@ -318,19 +318,25 @@ export function getCropDimensions(
       }
     }
 
-    // Smart Headroom & Anti-Excess-Top-Space Clamp (ป้องกันหัวขาด และป้องกันไม่ให้เหลือที่ว่างด้านบนเยอะเกินไป):
+    // Smart Event-Logo Headroom & Footroom Protection (เหลือพื้นที่บน-ล่างพอดี ~8-13% สำหรับวางโลโก้งาน ไม่ชิดขอบจนเกินไป):
     if (isPortrait && headNorm > 0.02) {
-      const minHeadroom = Math.round(cropH * 0.042); // เว้นเหนือผมอย่างน้อย 4.2% (~68px) ไม่ให้หัวขาด
-      const maxHeadroom = Math.round(cropH * (composition === 'face' ? 0.082 : 0.088)); // จำกัดไม่ให้เหลือด้านบนเกิน ~8.2% (~133px) เพื่อให้คนอยู่กลางเฟรมมากที่สุด
+      const minHeadroom = Math.round(cropH * 0.055); // เว้นเหนือผมอย่างน้อย 5.5% (~89px) ไม่ให้หัวชิดโลโก้บน
+      const maxHeadroom = Math.round(cropH * 0.135); // จำกัดด้านบนไม่ให้เกิน ~13.5% (~219px) เพื่อให้สมดุลบน-ล่างสวยพอดีวางโลโก้
       if (idealY < headY - maxHeadroom) {
         idealY = headY - maxHeadroom;
       }
       if (idealY > headY - minHeadroom) {
         idealY = headY - minHeadroom;
       }
+      // ป้องกันไม่ให้รองเท้าชิดขอบล่างเกินไป (ถ้าด้านบนยังมีพื้นที่เหลือเกิน minHeadroom)
+      const minFootroom = Math.round(cropH * 0.055);
+      const minCropYForFeet = feetY + minFootroom - cropH;
+      if (idealY < minCropYForFeet) {
+        idealY = Math.min(minCropYForFeet, headY - minHeadroom);
+      }
     } else if (!isPortrait && headNorm > 0.02) {
-      const minHeadroom = Math.round(cropH * 0.05);
-      const maxHeadroom = Math.round(cropH * 0.10);
+      const minHeadroom = Math.round(cropH * 0.06);
+      const maxHeadroom = Math.round(cropH * 0.135);
       if (idealY < headY - maxHeadroom) {
         idealY = headY - maxHeadroom;
       }

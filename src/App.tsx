@@ -31,7 +31,7 @@ import {
   clearClipPreviewCache,
 } from './videoCapture';
 
-export const APP_VERSION = '2.6.2';
+export const APP_VERSION = '2.6.3';
 const DEFAULT_UPDATE_MANIFEST_URL = 'https://memories-stack.github.io/snappro/version.json';
 
 interface RemoteUpdateManifest {
