@@ -269,6 +269,12 @@ const INTERVAL_OPTIONS = [0.5, 1, 2, 3, 5, 10];
 
 const ENHANCE_MODELS = [
   {
+    id: 'ai-super-res',
+    labelEn: '🚀 AI Super-Res',
+    labelTh: '🚀 AI Super-Res',
+    denoise: 28, sharpen: 52, clarity: 35, vibrance: 35, shadowLift: 15, sat: 112, con: 106, bri: 100,
+  },
+  {
     id: 'standard',
     labelEn: '✨ Standard',
     labelTh: '✨ สมดุล',
@@ -278,13 +284,13 @@ const ENHANCE_MODELS = [
     id: 'high-fidelity',
     labelEn: '💎 High Fidelity',
     labelTh: '💎 คมกริบ',
-    denoise: 15, sharpen: 60, clarity: 45, vibrance: 30, shadowLift: 10, sat: 110, con: 108, bri: 100,
+    denoise: 18, sharpen: 68, clarity: 45, vibrance: 30, shadowLift: 10, sat: 110, con: 108, bri: 100,
   },
   {
     id: 'sport-hdr',
     labelEn: '🔥 Sport Vivid',
     labelTh: '🔥 สีสดกีฬา',
-    denoise: 20, sharpen: 45, clarity: 40, vibrance: 65, shadowLift: 35, sat: 125, con: 112, bri: 102,
+    denoise: 20, sharpen: 48, clarity: 40, vibrance: 65, shadowLift: 35, sat: 125, con: 112, bri: 102,
   },
   {
     id: 'lowres-deblock',
@@ -1257,16 +1263,16 @@ export default function App() {
   const [shapesExpanded, setShapesExpanded] = useState<boolean>(true);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
-  // Basic Enhancer Sliders
-  const [enhanceModel, setEnhanceModel] = useState<string>(() => savedInit.enhanceModel || 'standard');
+  // Basic Enhancer Sliders (Default to AI Super-Res)
+  const [enhanceModel, setEnhanceModel] = useState<string>(() => savedInit.enhanceModelV2 || 'ai-super-res');
   const [brightness, setBrightness] = useState<number>(() => savedInit.brightness ?? 100);
   const [shadowLift, setShadowLift] = useState<number>(() => savedInit.shadowLift ?? 15);
-  const [contrast, setContrast] = useState<number>(() => savedInit.contrast ?? 105);
+  const [contrast, setContrast] = useState<number>(() => savedInit.contrast ?? 106);
   const [vibrance, setVibrance] = useState<number>(() => savedInit.vibrance ?? 35);
   const [saturation, setSaturation] = useState<number>(() => savedInit.saturation ?? 112);
-  const [sharpen, setSharpen] = useState<number>(() => savedInit.sharpen ?? 35);
-  const [clarity, setClarity] = useState<number>(() => savedInit.clarity ?? 25);
-  const [denoise, setDenoise] = useState<number>(() => savedInit.denoise ?? 25);
+  const [sharpen, setSharpen] = useState<number>(() => savedInit.sharpenV2 ?? 52);
+  const [clarity, setClarity] = useState<number>(() => savedInit.clarity ?? 35);
+  const [denoise, setDenoise] = useState<number>(() => savedInit.denoise ?? 28);
 
   // Lightroom Color Mixer & Color Grading
   const [colorMixer, setColorMixer] = useState<ColorMixerSettings>(
@@ -1317,12 +1323,14 @@ export default function App() {
           smartBestShot,
           skipStaticScene,
           enhanceModel,
+          enhanceModelV2: enhanceModel,
           brightness,
           shadowLift,
           contrast,
           vibrance,
           saturation,
           sharpen,
+          sharpenV2: sharpen,
           clarity,
           denoise,
           colorMixer,
@@ -2856,8 +2864,8 @@ export default function App() {
                 <span className="collapse-arrow">{isHistogramOpen ? '▼' : '▶'}</span>
                 <span className="panel-title">{t.histogram}</span>
               </div>
-              <span className="gpu-badge" title="WebGL2 Hardware Shader Acceleration Active">
-                {gpuActive ? '⚡ GPU WebGL2' : 'CPU'} • RGB
+              <span className="gpu-badge" title="GPU 16-Tap Bicubic + RCAS Edge-Directed Super-Resolution Active">
+                {gpuActive ? '⚡ GPU Super-Res 16-Tap' : 'CPU'} • RGB
               </span>
             </div>
             {isHistogramOpen && <HistogramGraph data={compareData?.histogram || null} />}

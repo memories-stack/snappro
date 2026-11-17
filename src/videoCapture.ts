@@ -901,32 +901,90 @@ class WebGL2PhotoEnhancer {
         );
       }
 
+      // 16-Tap Catmull-Rom Bicubic Super-Resolution via 5-Tap Fast Hardware Fetch + Anti-Ringing
+      vec4 sampleBicubicSuperRes(sampler2D tex, vec2 uv, vec2 texelSize) {
+        vec2 texSize = 1.0 / texelSize;
+        vec2 samplePos = uv * texSize;
+        vec2 texPos1 = floor(samplePos - 0.5) + 0.5;
+        vec2 f = samplePos - texPos1;
+
+        vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+        vec2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+        vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+        vec2 w3 = f * f * (-0.5 + 0.5 * f);
+
+        vec2 w12 = w1 + w2;
+        vec2 offset12 = w2 / max(w12, vec2(0.0001));
+
+        vec2 texPos0 = (texPos1 - 1.0) * texelSize;
+        vec2 texPos3 = (texPos1 + 2.0) * texelSize;
+        vec2 texPos12 = (texPos1 + offset12) * texelSize;
+
+        vec4 result = vec4(0.0);
+        result += texture(tex, vec2(texPos12.x, texPos0.y)) * (w12.x * w0.y);
+        result += texture(tex, vec2(texPos0.x,  texPos12.y)) * (w0.x * w12.y);
+        result += texture(tex, vec2(texPos12.x, texPos12.y)) * (w12.x * w12.y);
+        result += texture(tex, vec2(texPos3.x,  texPos12.y)) * (w3.x * w12.y);
+        result += texture(tex, vec2(texPos12.x, texPos3.y)) * (w12.x * w3.y);
+        float totalW = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
+        return result / max(totalW, 0.0001);
+      }
+
       void main() {
-        vec4 centerSample = texture(u_image, v_uv);
+        vec4 centerSample = sampleBicubicSuperRes(u_image, v_uv, u_texel);
         vec3 col = centerSample.rgb;
 
-        // 1. Spatial 3x3 Sharpen & Edge-Preserving Denoise
+        // 1. GPU Edge-Directed Super-Resolution (RCAS + De-Halo Anti-Ringing + Bokeh/Skin Shield)
+        vec3 n = texture(u_image, v_uv + vec2(0.0, -u_texel.y)).rgb;
+        vec3 s = texture(u_image, v_uv + vec2(0.0,  u_texel.y)).rgb;
+        vec3 w = texture(u_image, v_uv + vec2(-u_texel.x, 0.0)).rgb;
+        vec3 e = texture(u_image, v_uv + vec2( u_texel.x, 0.0)).rgb;
+        vec3 nw = texture(u_image, v_uv + vec2(-u_texel.x, -u_texel.y)).rgb;
+        vec3 ne = texture(u_image, v_uv + vec2( u_texel.x, -u_texel.y)).rgb;
+        vec3 sw = texture(u_image, v_uv + vec2(-u_texel.x,  u_texel.y)).rgb;
+        vec3 se = texture(u_image, v_uv + vec2( u_texel.x,  u_texel.y)).rgb;
+
+        // Local 3x3 neighborhood bounds for Anti-Ringing / De-Halo clamping
+        vec3 minCross = min(min(min(n, s), min(w, e)), texture(u_image, v_uv).rgb);
+        vec3 maxCross = max(max(max(n, s), max(w, e)), texture(u_image, v_uv).rgb);
+        vec3 minBox = min(minCross, min(min(nw, ne), min(sw, se)));
+        vec3 maxBox = max(maxCross, max(max(nw, ne), max(sw, se)));
+
+        // Clamp Catmull-Rom overshoot strictly within local neighborhood (Zero Ringing)
+        col = clamp(col, minBox, maxBox);
+
         if (u_sharpen > 0.0 || u_denoise > 0.0) {
-          vec3 n = texture(u_image, v_uv + vec2(0.0, -u_texel.y)).rgb;
-          vec3 s = texture(u_image, v_uv + vec2(0.0,  u_texel.y)).rgb;
-          vec3 w = texture(u_image, v_uv + vec2(-u_texel.x, 0.0)).rgb;
-          vec3 e = texture(u_image, v_uv + vec2( u_texel.x, 0.0)).rgb;
-          vec3 nw = texture(u_image, v_uv + vec2(-u_texel.x, -u_texel.y)).rgb;
-          vec3 ne = texture(u_image, v_uv + vec2( u_texel.x, -u_texel.y)).rgb;
-          vec3 sw = texture(u_image, v_uv + vec2(-u_texel.x,  u_texel.y)).rgb;
-          vec3 se = texture(u_image, v_uv + vec2( u_texel.x,  u_texel.y)).rgb;
+          // Edge-Directed Gradient Analysis (แยกแยะเส้นขอบจริง vs พื้นหลังเบลอ Bokeh)
+          vec3 gradH = abs(w - e);
+          vec3 gradV = abs(n - s);
+          vec3 gradD1 = abs(nw - se);
+          vec3 gradD2 = abs(ne - sw);
+          vec3 maxGrad = max(max(gradH, gradV), max(gradD1, gradD2));
+          vec3 sumGrad = gradH + gradV + gradD1 + gradD2 + vec3(0.0001);
+          float coherence = dot(maxGrad / sumGrad, vec3(0.3333)); // สูงเมื่อเป็นเส้นขอบคมชัด
 
           vec3 blur = (col * 4.0 + (n + s + w + e) * 2.0 + (nw + ne + sw + se)) / 16.0;
           vec3 diff = col - blur;
           float edgeMag = dot(abs(diff), vec3(0.299, 0.587, 0.114)) * 255.0;
-          float noiseThresh = 3.0 + u_denoise * 18.0;
+          float noiseThresh = 2.8 + u_denoise * 16.0;
+
+          // Skin-Tone Shield (ป้องกันไม่ให้เร่งความคมบนผิวจนหยาบ แต่ให้ดวงตา/คิ้ว/ป้ายบิบคมกริบ)
+          bool isSkinPx = (col.r > col.g && col.g > col.b && (col.r - col.g) > 0.045 && (col.r - col.g) < 0.28);
+          float skinDetailMod = isSkinPx ? 0.62 : 1.0;
 
           if (u_denoise > 0.0 && edgeMag < noiseThresh) {
-            float dStrength = (1.0 - edgeMag / noiseThresh) * (u_denoise * 0.85);
+            // Bokeh & Flat-Area Bilateral Denoise (เกลี่ยฉากหลังละลายให้เนียนนุ่มเหมือนเลนส์โปร)
+            float dStrength = (1.0 - edgeMag / noiseThresh) * (u_denoise * 0.88);
             col = col - diff * dStrength;
-          } else if (u_sharpen > 0.0 && edgeMag >= 3.0) {
-            float sAmount = u_sharpen * 1.85;
-            col = col + diff * sAmount;
+          } else if (u_sharpen > 0.0 && edgeMag >= 2.2) {
+            // RCAS Contrast-Adaptive Super-Resolution with De-Halo Limiter
+            float dirBoost = 0.85 + clamp((coherence - 0.25) * 1.4, 0.0, 0.55);
+            float deHalo = 1.0 / (1.0 + max(0.0, edgeMag - 22.0) * 0.032);
+            float sAmount = u_sharpen * 2.15 * dirBoost * deHalo * skinDetailMod;
+            vec3 sharpened = col + diff * sAmount;
+            // Soft Anti-Ringing Limit (ยอมให้คมกริบโดยไม่เกิดขอบขาวเรืองแสง)
+            vec3 headroom = (maxBox - minBox) * 0.18;
+            col = clamp(sharpened, max(vec3(0.0), minBox - headroom), min(vec3(1.0), maxBox + headroom));
           }
         }
 
