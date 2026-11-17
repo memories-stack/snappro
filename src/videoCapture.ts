@@ -636,29 +636,29 @@ export function analyzeFrameSharpnessAndGray(
       ? Math.max(0.05, (faceTopRow - sh * 0.045) / sh)
       : Math.max(0.16, yNorm - 0.30);
 
-  // ตรวจจับตำแหน่งปลายรองเท้าด้านล่างบนพื้นถนน (ไล่วัดจากด้านล่าง 95.5% ขึ้นมาหา 75%)
+  // ตรวจจับตำแหน่งปลายเท้า/รองเท้าบนพื้นถนน (สแกนลงจาก 72% เฉพาะแนวขา ±10% เพื่อไม่ให้ขอบฟุตบาทหรือพื้นถนนด้านล่างหลอก)
   const subjX = Math.round(faceTopRow > 0 ? faceCenterX : sw * xNorm);
-  const sx0 = Math.max(4, Math.round(subjX - sw * 0.22));
-  const sx1 = Math.min(sw - 4, Math.round(subjX + sw * 0.22));
-  let feetRow = Math.round(sh * 0.88);
-  const scanStart = Math.min(sh - 3, Math.floor(sh * 0.955));
-  const scanEnd = Math.floor(sh * 0.75);
+  const sx0 = Math.max(4, Math.round(subjX - sw * 0.10));
+  const sx1 = Math.min(sw - 4, Math.round(subjX + sw * 0.10));
+  let feetRow = Math.round(sh * 0.78);
+  const scanStart = Math.floor(sh * 0.72);
+  const scanEnd = Math.min(sh - 2, Math.floor(sh * 0.96));
+  let emptyStreak = 0;
 
-  for (let y = scanStart; y > scanEnd; y--) {
-    let cnt0 = 0;
-    let cnt1 = 0;
-    let cnt2 = 0;
+  for (let y = scanStart; y < scanEnd; y++) {
+    let cnt = 0;
     const r0 = y * sw;
-    const r1 = (y - 1) * sw;
-    const r2 = (y - 2) * sw;
     for (let x = sx0; x <= sx1; x++) {
-      if (absLapBuf[r0 + x] > 15) cnt0++;
-      if (absLapBuf[r1 + x] > 14) cnt1++;
-      if (absLapBuf[r2 + x] > 13) cnt2++;
+      if (absLapBuf[r0 + x] > 18) cnt++;
     }
-    if (cnt0 >= 4 && cnt1 >= 3 && cnt2 >= 3) {
+    if (cnt >= 7) {
       feetRow = y;
-      break;
+      emptyStreak = 0;
+    } else {
+      emptyStreak++;
+      if (emptyStreak >= 6) {
+        break;
+      }
     }
   }
   const feetYNorm = Math.min(0.965, feetRow / sh);
