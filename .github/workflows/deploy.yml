@@ -99,6 +99,7 @@ jobs:
 
           (cd build_mac && zip -r -q release_assets/SnapPro-Mac.zip SnapPro.app)
           cp dist/SnapPro-Offline.html build_mac/release_assets/SnapPro-Offline.html
+          [ -f SnapPro_Workflow_A4.png ] && cp SnapPro_Workflow_A4.png build_mac/release_assets/SnapPro_Workflow_A4.png || true
 
       - name: Publish GitHub Release
         env:

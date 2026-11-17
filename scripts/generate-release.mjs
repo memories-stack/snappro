@@ -21,10 +21,14 @@ const js = fs.readFileSync(path.join(distDir, 'assets', jsMatch[1]), 'utf8');
 html = html.replace(/<link rel="stylesheet"[^>]+>/, () => `<style>${css}</style>`);
 html = html.replace(/<script type="module"[^>]+><\/script>/, () => `<script type="module">${js}</script>`);
 
-// 1. Write full self-contained Web/Offline Studio App bundles
+// 1. Write full self-contained Web/Offline Studio App bundles & copy A4 workflow banner
 fs.writeFileSync(path.join(distDir, 'SnapPro-Offline.html'), html, 'utf8');
 fs.writeFileSync(path.join(distDir, 'app.html'), html, 'utf8');
 fs.writeFileSync(path.join(root, 'SnapPro-Offline.html'), html, 'utf8');
+const bannerSrc = path.join(root, 'SnapPro_Workflow_A4.png');
+if (fs.existsSync(bannerSrc)) {
+  fs.copyFileSync(bannerSrc, path.join(distDir, 'SnapPro_Workflow_A4.png'));
+}
 
 // 2. Write manifest for OTA auto-update
 const dmgUrl = `https://github.com/memories-stack/snappro/releases/download/v${version}/SnapPro-Installer.dmg`;
@@ -194,6 +198,7 @@ const landingHtml = `<!doctype html>
       <a class="btn-secondary" href="./app.html">🌐 เปิดใช้งานบนเว็บ</a>
       <a class="btn-secondary" href="https://github.com/memories-stack/snappro/releases/latest">📦 ดู Releases ทั้งหมด</a>
     </div>
+    <a class="btn-secondary" style="width:100%;margin-bottom:22px;border-color:rgba(52,211,153,0.38);color:#6ee7b7;" href="./SnapPro_Workflow_A4.png" target="_blank">📋 เปิดดู / ดาวน์โหลดคู่มือทำงาน 5 ขั้นตอน (A4 Banner)</a>
 
     <div class="features">
       <div class="feat-box">
@@ -214,7 +219,7 @@ const landingHtml = `<!doctype html>
       </div>
     </div>
 
-    <div class="guide-box">
+    <div class="guide-box" style="margin-bottom: 18px;">
       <strong>🍎 วิธีเปิดแอปครั้งแรกบน macOS (ทำครั้งเดียว):</strong>
       <ol>
         <li>หากขึ้นแจ้งเตือน <em>"SnapPro Not Opened"</em> ให้กด <strong>Done</strong></li>
@@ -222,6 +227,10 @@ const landingHtml = `<!doctype html>
         <li>เลื่อนลงล่างสุด กดปุ่ม <strong>Open Anyway</strong> → ใส่รหัสเครื่อง Mac ก็ใช้งานได้ตลอดชีพครับ</li>
       </ol>
     </div>
+
+    <a href="./SnapPro_Workflow_A4.png" target="_blank" style="display:block;text-decoration:none;">
+      <img src="./SnapPro_Workflow_A4.png" alt="SnapPro Studio 5-Step Workflow Manual A4" style="width:100%;border-radius:14px;border:1px solid rgba(148,163,184,0.22);display:block;" />
+    </a>
 
     <div class="footer">
       SnapPro Studio • Apple Silicon (M1–M4) &amp; Intel Universal • 100% Offline Processing
