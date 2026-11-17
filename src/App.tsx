@@ -2985,14 +2985,16 @@ export default function App() {
                   </select>
                 </div>
 
-                {/* ปุ่มลัดขนาด 3:2 ยอดนิยม (คลิกเดียวเปลี่ยนขนาดทันที) */}
+                {/* ปุ่มลัดขนาด 3:2 มาตรฐานกล้อง Nikon DX & FX (คลิกเดียวเปลี่ยนขนาดทันที) */}
                 {cropAspect !== 'none' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
                     {[
                       { id: 'crop-2-3-auto', lbl: 'ต้นฉบับ\n1080×1620' },
-                      { id: 'nikon-dx-s', lbl: 'DX-S\n1800×2704' },
-                      { id: 'nikon-dx-m', lbl: 'DX-M\n2696×4048' },
-                      { id: 'nikon-dx-l', lbl: 'DX-L\n3600×5408' },
+                      { id: 'nikon-dx-m', lbl: 'DX-M (11MP)\n2696×4048' },
+                      { id: 'nikon-dx-l', lbl: 'DX-L (20MP)\n3600×5408' },
+                      { id: 'nikon-fx-s', lbl: 'FX-S (11MP)\n2752×4128' },
+                      { id: 'nikon-fx-m', lbl: 'FX-M (26MP)\n4128×6192' },
+                      { id: 'nikon-fx-l', lbl: 'FX-L (45MP)\n5504×8256' },
                     ].map(p => (
                       <button
                         key={p.id}

@@ -1553,6 +1553,8 @@ function renderEnhancedFrameToCanvas(
   // Fast Path: Single-Pass Direct GPU Video-to-Target Resolution + Color Grading + Sharpening
   const gpuCanvas = gpu.render(renderSource, destW, destH, settings, renderSrcW, renderSrcH);
   if (gpuCanvas) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(gpuCanvas, 0, 0, destW, destH);
   } else {
     // Fallback to CPU stepped upscale only if WebGL2 is unavailable
