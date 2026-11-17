@@ -2119,7 +2119,7 @@ export async function autoCapture(
     let bestTime = targetTime;
 
     // Feature 1: Smart Best-Shot Search (Forward-only H.264 micro-seek avoids costly GOP keyframe rewind!)
-    if (settings.smartBestShot && sharpnessThreshold > 0 && bestAnalysis.sharpness < sharpnessThreshold) {
+    if (settings.smartBestShot && sharpnessThreshold > 0 && bestAnalysis.sharpness < Math.max(sharpnessThreshold * 1.35, 550)) {
       const maxDelta = Math.min(0.18, intervalSec * 0.3);
       const offsets = [maxDelta * 0.5, maxDelta];
 

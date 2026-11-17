@@ -31,7 +31,7 @@ import {
   clearClipPreviewCache,
 } from './videoCapture';
 
-export const APP_VERSION = '2.6.3';
+export const APP_VERSION = '2.6.4';
 const DEFAULT_UPDATE_MANIFEST_URL = 'https://memories-stack.github.io/snappro/version.json';
 
 interface RemoteUpdateManifest {
@@ -1280,7 +1280,7 @@ export default function App() {
 
   // Smart AI Capture Features (Best-Shot Search & Motion Trigger)
   const [filterBlur, setFilterBlur] = useState<boolean>(() => savedInit.filterBlur ?? true);
-  const [sharpnessThreshold, setSharpnessThreshold] = useState<number>(() => savedInit.sharpnessThreshold ?? 15);
+  const [sharpnessThreshold, setSharpnessThreshold] = useState<number>(() => savedInit.sharpnessThresholdV2 ?? 380);
   const [smartBestShot, setSmartBestShot] = useState<boolean>(() => savedInit.smartBestShot ?? true);
   const [skipStaticScene, setSkipStaticScene] = useState<boolean>(() => savedInit.skipStaticScene ?? false);
 
@@ -1347,6 +1347,7 @@ export default function App() {
           skipOverflowCropV2: skipOverflowCrop,
           filterBlur,
           sharpnessThreshold,
+          sharpnessThresholdV2: sharpnessThreshold,
           smartBestShot,
           skipStaticScene,
           enhanceModel,
@@ -3410,20 +3411,20 @@ export default function App() {
                 {filterBlur && (
                   <div className="mini-pills">
                     <button
-                      className={`mini-pill ${sharpnessThreshold === 5 ? 'active' : ''}`}
-                      onClick={() => setSharpnessThreshold(5)}
+                      className={`mini-pill ${sharpnessThreshold === 120 ? 'active' : ''}`}
+                      onClick={() => setSharpnessThreshold(120)}
                     >
                       {t.low}
                     </button>
                     <button
-                      className={`mini-pill ${sharpnessThreshold === 15 ? 'active' : ''}`}
-                      onClick={() => setSharpnessThreshold(15)}
+                      className={`mini-pill ${sharpnessThreshold === 380 ? 'active' : ''}`}
+                      onClick={() => setSharpnessThreshold(380)}
                     >
                       {t.med}
                     </button>
                     <button
-                      className={`mini-pill ${sharpnessThreshold === 30 ? 'active' : ''}`}
-                      onClick={() => setSharpnessThreshold(30)}
+                      className={`mini-pill ${sharpnessThreshold === 620 ? 'active' : ''}`}
+                      onClick={() => setSharpnessThreshold(620)}
                     >
                       {t.high}
                     </button>

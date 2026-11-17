@@ -1,8 +1,8 @@
 {
   "name": "autobots-recode",
   "private": true,
-  "version": "2.6.3",
-  "releaseNotes": "Balanced Event-Logo Top/Bottom Headroom & Footroom Margin (5.5% - 13.5%)",
+  "version": "2.6.4",
+  "releaseNotes": "Calibrated AI Blur Filter (120/380/620) & Best-Shot Sharp Frame Auto-Reject",
   "type": "module",
   "scripts": {
     "dev": "vite",
