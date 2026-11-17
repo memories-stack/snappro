@@ -16,12 +16,61 @@
 #include <libgen.h>
 
 #define DEFAULT_PORT 5179
+#define NATIVE_VERSION "2.6.0"
+#define DEFAULT_UPDATE_MANIFEST_URL "https://memories-stack.github.io/snappro/version.json"
 
 static int g_actual_port = DEFAULT_PORT;
 static char g_html_path[2048] = {0};
+static char g_bundle_html_path[2048] = {0};
+static char g_ota_html_path[2048] = {0};
+static char g_ota_dir[2048] = {0};
 static char g_save_dir[2048] = {0};
 static long g_boot_time = 0;
 static pthread_mutex_t g_dir_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static NSData *fetch_url_sync(NSString *urlStr, double timeoutSec, NSInteger *outStatus) {
+    NSURL *url = [NSURL URLWithString:urlStr];
+    if (!url) return nil;
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url
+                                                       cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
+                                                   timeoutInterval:timeoutSec];
+    [req setValue:@"SnapPro-macOS/2.6.0" forHTTPHeaderField:@"User-Agent"];
+
+    __block NSData *resultData = nil;
+    __block NSInteger statusCode = 0;
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+
+    NSURLSession *session = [NSURLSession sharedSession];
+    NSURLSessionDataTask *task = [session dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        if (!error && [response isKindOfClass:[NSHTTPURLResponse class]]) {
+            statusCode = [(NSHTTPURLResponse *)response statusCode];
+            if (statusCode >= 200 && statusCode < 300) {
+                resultData = data;
+            }
+        }
+        dispatch_semaphore_signal(sem);
+    }];
+    [task resume];
+    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)((timeoutSec + 1.0) * NSEC_PER_SEC)));
+    if (outStatus) *outStatus = statusCode;
+    return resultData;
+}
+
+static void url_decode_raw(const char *src, char *dst, size_t dst_size) {
+    size_t di = 0;
+    for (size_t si = 0; src[si] && di + 1 < dst_size; si++) {
+        if (src[si] == '%' && src[si + 1] && src[si + 2]) {
+            char hex[3] = { src[si + 1], src[si + 2], 0 };
+            dst[di++] = (char)strtol(hex, NULL, 16);
+            si += 2;
+        } else if (src[si] == '+') {
+            dst[di++] = ' ';
+        } else {
+            dst[di++] = src[si];
+        }
+    }
+    dst[di] = '\0';
+}
 
 static void url_decode(const char *src, char *dst, size_t dst_size) {
     size_t di = 0;
@@ -74,10 +123,12 @@ static void *handle_client(void *arg) {
         if (strncmp(header_buf, "GET /__version", 14) == 0) {
             struct stat st;
             long mtime = 0, fsize_stat = 0;
+            pthread_mutex_lock(&g_dir_mutex);
             if (stat(g_html_path, &st) == 0) {
                 mtime = (long)st.st_mtime;
                 fsize_stat = (long)st.st_size;
             }
+            pthread_mutex_unlock(&g_dir_mutex);
             char body[128];
             snprintf(body, sizeof(body), "%ld-%ld-%ld", mtime, fsize_stat, g_boot_time);
             char resp[320];
@@ -86,6 +137,141 @@ static void *handle_client(void *arg) {
                 "Content-Type: text/plain; charset=utf-8\r\n"
                 "Content-Length: %lu\r\n"
                 "Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n"
+                "Connection: close\r\n\r\n%s", strlen(body), body);
+            send(client_fd, resp, strlen(resp), 0);
+            close(client_fd);
+            return NULL;
+        }
+
+        // 1b. GET /__check_update?url=... (Native macOS HTTPS Update Checker — Zero CORS)
+        if (strncmp(header_buf, "GET /__check_update", 19) == 0) {
+            char custom_url[1024] = {0};
+            char *q = strstr(header_buf, "url=");
+            if (q) {
+                q += 4;
+                char raw_url[1024] = {0};
+                size_t i = 0;
+                while (q[i] && q[i] != ' ' && q[i] != '&' && q[i] != '\r' && i + 1 < sizeof(raw_url)) {
+                    raw_url[i] = q[i];
+                    i++;
+                }
+                raw_url[i] = '\0';
+                url_decode_raw(raw_url, custom_url, sizeof(custom_url));
+            }
+            NSString *targetUrl = (custom_url[0] && strncmp(custom_url, "http", 4) == 0)
+                ? [NSString stringWithUTF8String:custom_url]
+                : [NSString stringWithUTF8String:DEFAULT_UPDATE_MANIFEST_URL];
+
+            NSInteger statusCode = 0;
+            NSData *data = fetch_url_sync(targetUrl, 6.0, &statusCode);
+            NSString *jsonResp = nil;
+            if (data && data.length > 2) {
+                id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+                if ([parsed isKindOfClass:[NSDictionary class]]) {
+                    NSDictionary *wrapper = @{
+                        @"ok": @YES,
+                        @"nativeVersion": @NATIVE_VERSION,
+                        @"manifest": parsed
+                    };
+                    NSData *outData = [NSJSONSerialization dataWithJSONObject:wrapper options:0 error:nil];
+                    if (outData) {
+                        jsonResp = [[NSString alloc] initWithData:outData encoding:NSUTF8StringEncoding];
+                    }
+                }
+            }
+            if (!jsonResp) {
+                jsonResp = [NSString stringWithFormat:@"{\"ok\":false,\"nativeVersion\":\"%s\",\"status\":%ld}", NATIVE_VERSION, (long)statusCode];
+            }
+            const char *cbody = [jsonResp UTF8String];
+            size_t blen = strlen(cbody);
+            char *resp = malloc(blen + 256);
+            int hlen = snprintf(resp, 256,
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: application/json; charset=utf-8\r\n"
+                "Content-Length: %zu\r\n"
+                "Cache-Control: no-store\r\n"
+                "Connection: close\r\n\r\n", blen);
+            memcpy(resp + hlen, cbody, blen);
+            send(client_fd, resp, hlen + blen, 0);
+            free(resp);
+            close(client_fd);
+            return NULL;
+        }
+
+        // 1c. POST /__perform_ota_update?url=... (Downloads & atomically installs new SnapPro-Offline.html)
+        if (strncmp(header_buf, "POST /__perform_ota_update", 26) == 0) {
+            char target_url[1024] = {0};
+            char *q = strstr(header_buf, "url=");
+            if (q) {
+                q += 4;
+                char raw_url[1024] = {0};
+                size_t i = 0;
+                while (q[i] && q[i] != ' ' && q[i] != '&' && q[i] != '\r' && i + 1 < sizeof(raw_url)) {
+                    raw_url[i] = q[i];
+                    i++;
+                }
+                raw_url[i] = '\0';
+                url_decode_raw(raw_url, target_url, sizeof(target_url));
+            }
+
+            int updated = 0;
+            size_t downloaded_bytes = 0;
+            const char *err_msg = "invalid_url";
+            if (target_url[0] && strncmp(target_url, "https://", 8) == 0) {
+                NSInteger statusCode = 0;
+                NSData *htmlData = fetch_url_sync([NSString stringWithUTF8String:target_url], 20.0, &statusCode);
+                if (!htmlData || htmlData.length < 50000) {
+                    err_msg = "download_failed_or_too_small";
+                } else {
+                    NSString *preview = [[NSString alloc] initWithBytes:htmlData.bytes
+                                                                 length:MIN((NSUInteger)4096, htmlData.length)
+                                                               encoding:NSUTF8StringEncoding];
+                    if (preview && [preview containsString:@"<title"] && [preview containsString:@"SnapPro"]) {
+                        // Prefer updating Application Support OTA path (always writable without admin prompt)
+                        mkdir(g_ota_dir, 0755);
+                        char tmp_path[2200];
+                        snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", g_ota_html_path);
+                        FILE *fp = fopen(tmp_path, "wb");
+                        if (fp) {
+                            fwrite(htmlData.bytes, 1, htmlData.length, fp);
+                            fclose(fp);
+                            if (rename(tmp_path, g_ota_html_path) == 0) {
+                                pthread_mutex_lock(&g_dir_mutex);
+                                strncpy(g_html_path, g_ota_html_path, sizeof(g_html_path) - 1);
+                                pthread_mutex_unlock(&g_dir_mutex);
+                                // Also sync bundle Resources/index.html if writable
+                                FILE *bfp = fopen(g_bundle_html_path, "wb");
+                                if (bfp) {
+                                    fwrite(htmlData.bytes, 1, htmlData.length, bfp);
+                                    fclose(bfp);
+                                }
+                                updated = 1;
+                                downloaded_bytes = (size_t)htmlData.length;
+                            } else {
+                                unlink(tmp_path);
+                                err_msg = "rename_failed";
+                            }
+                        } else {
+                            err_msg = "write_failed";
+                        }
+                    } else {
+                        err_msg = "invalid_html_signature";
+                    }
+                }
+            }
+
+            char body[256];
+            if (updated) {
+                snprintf(body, sizeof(body), "{\"ok\":true,\"bytes\":%zu}", downloaded_bytes);
+            } else {
+                snprintf(body, sizeof(body), "{\"ok\":false,\"error\":\"%s\"}", err_msg);
+            }
+            char resp[512];
+            snprintf(resp, sizeof(resp),
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: application/json\r\n"
+                "Content-Length: %zu\r\n"
+                "Cache-Control: no-store\r\n"
                 "Connection: close\r\n\r\n%s", strlen(body), body);
             send(client_fd, resp, strlen(resp), 0);
             close(client_fd);
@@ -305,8 +491,13 @@ static void *handle_client(void *arg) {
             return NULL;
         }
 
-        // 4. Default: Serve index.html
-        FILE *f = fopen(g_html_path, "rb");
+        // 4. Default: Serve index.html (thread-safe path lookup supporting OTA updates)
+        char active_html_path[2048];
+        pthread_mutex_lock(&g_dir_mutex);
+        strncpy(active_html_path, g_html_path, sizeof(active_html_path) - 1);
+        active_html_path[sizeof(active_html_path) - 1] = '\0';
+        pthread_mutex_unlock(&g_dir_mutex);
+        FILE *f = fopen(active_html_path, "rb");
         if (!f) {
             const char *nf = "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\r\nNot Found";
             send(client_fd, nf, strlen(nf), 0);
@@ -540,7 +731,22 @@ int main(int argc, const char *argv[]) {
         if (!realpath(exe_path, real_exe)) strncpy(real_exe, exe_path, sizeof(real_exe));
 
         char *dir = dirname(real_exe);
-        snprintf(g_html_path, sizeof(g_html_path), "%s/../Resources/index.html", dir);
+        snprintf(g_bundle_html_path, sizeof(g_bundle_html_path), "%s/../Resources/index.html", dir);
+        const char *home_dir = getenv("HOME");
+        if (home_dir && home_dir[0]) {
+            snprintf(g_ota_dir, sizeof(g_ota_dir), "%s/Library/Application Support/SnapPro", home_dir);
+            snprintf(g_ota_html_path, sizeof(g_ota_html_path), "%s/index.html", g_ota_dir);
+        }
+
+        // Use OTA-updated HTML if it exists, is valid (> 50KB), and is newer than the bundled HTML
+        struct stat st_bundle, st_ota;
+        int has_bundle = (stat(g_bundle_html_path, &st_bundle) == 0);
+        int has_ota = (g_ota_html_path[0] && stat(g_ota_html_path, &st_ota) == 0 && st_ota.st_size >= 50000);
+        if (has_ota && (!has_bundle || st_ota.st_mtime >= st_bundle.st_mtime)) {
+            strncpy(g_html_path, g_ota_html_path, sizeof(g_html_path) - 1);
+        } else {
+            strncpy(g_html_path, g_bundle_html_path, sizeof(g_html_path) - 1);
+        }
         g_boot_time = (long)time(NULL);
 
         // Free port 5179 if held by an older daemon

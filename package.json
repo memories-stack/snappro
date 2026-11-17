@@ -1,11 +1,12 @@
 {
   "name": "autobots-recode",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.6.0",
+  "releaseNotes": "AI Full-Body Head-to-Feet Symmetric Centering + Online OTA Auto-Update",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/generate-release.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

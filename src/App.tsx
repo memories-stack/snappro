@@ -28,6 +28,30 @@ import {
   renderComparisonPreview,
 } from './videoCapture';
 
+export const APP_VERSION = '2.6.0';
+const DEFAULT_UPDATE_MANIFEST_URL = 'https://memories-stack.github.io/snappro/version.json';
+
+interface RemoteUpdateManifest {
+  version: string;
+  minNativeVersion?: string;
+  releasedAt?: string;
+  notes?: string;
+  htmlUrl?: string;
+  dmgUrl?: string;
+}
+
+function isNewerVersion(remote: string, current: string): boolean {
+  const pa = remote.replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0);
+  const pb = current.replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const a = pa[i] || 0;
+    const b = pb[i] || 0;
+    if (a > b) return true;
+    if (a < b) return false;
+  }
+  return false;
+}
+
 interface VideoItem {
   id: string;
   file: File;
@@ -2326,6 +2350,123 @@ export default function App() {
   };
 
   const serverVersionRef = useRef<string>('');
+  const [updateInfo, setUpdateInfo] = useState<RemoteUpdateManifest | null>(null);
+  const [nativeVer, setNativeVer] = useState<string>(APP_VERSION);
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'updating' | 'up-to-date' | 'error'>('idle');
+  const [updateDismissed, setUpdateDismissed] = useState<boolean>(false);
+  const [autoOtaEnabled, setAutoOtaEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('snappro_auto_ota') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+
+  const checkOnlineUpdate = useCallback(async (manual = false) => {
+    if (isWorking) return;
+    if (manual) {
+      setUpdateStatus('checking');
+      setUpdateDismissed(false);
+    }
+    try {
+      let manifest: RemoteUpdateManifest | null = null;
+      let currentNative = APP_VERSION;
+
+      // 1. Prefer native macOS bridge (zero CORS issues)
+      try {
+        const res = await fetch(`/__check_update?url=${encodeURIComponent(DEFAULT_UPDATE_MANIFEST_URL)}&t=${Date.now()}`, {
+          cache: 'no-store',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.nativeVersion) currentNative = data.nativeVersion;
+          if (data?.ok && data?.manifest) {
+            manifest = data.manifest as RemoteUpdateManifest;
+          }
+        }
+      } catch {
+        // Fallback to direct browser fetch when running outside macOS bundle
+      }
+
+      if (!manifest) {
+        const res = await fetch(`${DEFAULT_UPDATE_MANIFEST_URL}?t=${Date.now()}`, { cache: 'no-store' });
+        if (res.ok) {
+          manifest = (await res.json()) as RemoteUpdateManifest;
+        }
+      }
+
+      setNativeVer(currentNative);
+      if (manifest && manifest.version && isNewerVersion(manifest.version, APP_VERSION)) {
+        setUpdateInfo(manifest);
+        setUpdateStatus('available');
+        setUpdateDismissed(false);
+      } else {
+        setUpdateInfo(null);
+        setUpdateStatus(manual ? 'up-to-date' : 'idle');
+        if (manual) {
+          setTimeout(() => setUpdateStatus(s => (s === 'up-to-date' ? 'idle' : s)), 3500);
+        }
+      }
+    } catch {
+      if (manual) {
+        setUpdateStatus('error');
+        setTimeout(() => setUpdateStatus(s => (s === 'error' ? 'idle' : s)), 3500);
+      }
+    }
+  }, [isWorking]);
+
+  const applyOnlineUpdate = useCallback(async () => {
+    if (!updateInfo?.htmlUrl) return;
+    setUpdateStatus('updating');
+    try {
+      const res = await fetch(`/__perform_ota_update?url=${encodeURIComponent(updateInfo.htmlUrl)}`, {
+        method: 'POST',
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.ok) {
+          window.location.reload();
+          return;
+        }
+      }
+      // Browser/Offline-HTML fallback: open download URL
+      window.open(updateInfo.htmlUrl, '_blank');
+      setUpdateStatus('available');
+    } catch {
+      window.open(updateInfo.htmlUrl, '_blank');
+      setUpdateStatus('available');
+    }
+  }, [updateInfo]);
+
+  // Automatic Online Update Check on startup (+ every 30 min when idle) & optional Auto-OTA apply
+  useEffect(() => {
+    const startTimer = window.setTimeout(() => {
+      checkOnlineUpdate(false);
+    }, 2500);
+    const periodicTimer = window.setInterval(() => {
+      if (!isWorking && videos.length === 0) {
+        checkOnlineUpdate(false);
+      }
+    }, 30 * 60 * 1000);
+    return () => {
+      window.clearTimeout(startTimer);
+      window.clearInterval(periodicTimer);
+    };
+  }, [checkOnlineUpdate, isWorking, videos.length]);
+
+  useEffect(() => {
+    if (
+      autoOtaEnabled &&
+      updateStatus === 'available' &&
+      updateInfo?.htmlUrl &&
+      !isWorking &&
+      videos.length === 0 &&
+      (!updateInfo.minNativeVersion || !isNewerVersion(updateInfo.minNativeVersion, nativeVer))
+    ) {
+      applyOnlineUpdate();
+    }
+  }, [autoOtaEnabled, updateStatus, updateInfo, isWorking, videos.length, nativeVer, applyOnlineUpdate]);
 
   // Auto-Refresh Watcher: Automatically reloads when app is reopened/updated while idle
   useEffect(() => {
@@ -2508,6 +2649,36 @@ export default function App() {
 
           <button
             type="button"
+            className={`mini-pill ${updateStatus === 'available' ? 'active' : ''}`}
+            style={{
+              padding: '4px 8px',
+              fontSize: 11,
+              borderColor: updateStatus === 'available' ? '#10b981' : undefined,
+              color: updateStatus === 'available' ? '#34d399' : undefined,
+            }}
+            onClick={() => checkOnlineUpdate(true)}
+            disabled={updateStatus === 'checking' || updateStatus === 'updating'}
+            title={
+              lang === 'th'
+                ? `เวอร์ชันปัจจุบัน v${APP_VERSION} — คลิกเพื่อตรวจหาอัปเดตออนไลน์`
+                : `Current version v${APP_VERSION} — Click to check for online updates`
+            }
+          >
+            {updateStatus === 'checking'
+              ? '⏳ Checking...'
+              : updateStatus === 'updating'
+              ? '⬇️ Updating...'
+              : updateStatus === 'available' && updateInfo
+              ? `✨ v${updateInfo.version}`
+              : updateStatus === 'up-to-date'
+              ? `✅ v${APP_VERSION}`
+              : updateStatus === 'error'
+              ? `⚠️ Offline`
+              : `☁️ v${APP_VERSION}`}
+          </button>
+
+          <button
+            type="button"
             className={`mini-pill ${autoRefreshEnabled ? 'active' : ''}`}
             style={{ padding: '4px 8px', fontSize: 11 }}
             onClick={() => setAutoRefreshEnabled(v => !v)}
@@ -2536,6 +2707,77 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {updateStatus === 'available' && updateInfo && !updateDismissed && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            padding: '7px 14px',
+            background: 'linear-gradient(90deg, rgba(16,185,129,0.16), rgba(37,99,235,0.16))',
+            borderBottom: '1px solid rgba(52,211,153,0.35)',
+            fontSize: 12,
+            color: '#e2e8f0',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <span>✨</span>
+            <strong style={{ color: '#34d399' }}>
+              {lang === 'th' ? `มีอัปเดตใหม่ v${updateInfo.version}` : `New Update v${updateInfo.version} Available`}
+            </strong>
+            {updateInfo.notes && (
+              <span style={{ color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                — {updateInfo.notes}
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#94a3b8', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={autoOtaEnabled}
+                onChange={e => {
+                  const val = e.target.checked;
+                  setAutoOtaEnabled(val);
+                  try {
+                    localStorage.setItem('snappro_auto_ota', String(val));
+                  } catch {}
+                }}
+              />
+              {lang === 'th' ? 'อัปเดตอัตโนมัติ' : 'Auto-Update'}
+            </label>
+            {(!updateInfo.minNativeVersion || !isNewerVersion(updateInfo.minNativeVersion, nativeVer)) ? (
+              <button
+                type="button"
+                className="btn-xs btn-success"
+                onClick={applyOnlineUpdate}
+                disabled={isWorking}
+              >
+                🚀 {lang === 'th' ? 'อัปเดตทันที' : 'Update Now'}
+              </button>
+            ) : (
+              updateInfo.dmgUrl && (
+                <button
+                  type="button"
+                  className="btn-xs btn-primary"
+                  onClick={() => window.open(updateInfo.dmgUrl, '_blank')}
+                >
+                  ⬇️ {lang === 'th' ? 'ดาวน์โหลดตัวติดตั้งใหม่ (.dmg)' : 'Download Installer (.dmg)'}
+                </button>
+              )
+            )}
+            <button
+              type="button"
+              className="btn-xs btn-ghost"
+              onClick={() => setUpdateDismissed(true)}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ==================== MAIN 2-COLUMN WORKSPACE ==================== */}
       <div className="studio-body">
