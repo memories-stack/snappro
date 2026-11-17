@@ -1,4 +1,4 @@
-name: Deploy SnapPro to GitHub Pages
+name: Deploy SnapPro to GitHub Pages & Releases
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -47,3 +47,68 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  release-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies & Build Web/Offline bundle
+        run: |
+          npm ci || npm install
+          npm run build
+
+      - name: Build Universal macOS App & Installers (.dmg, .pkg, .zip)
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          NOTES=$(node -p "require('./package.json').releaseNotes || 'SnapPro Studio Release'")
+          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "APP_NOTES=$NOTES" >> $GITHUB_ENV
+
+          mkdir -p build_mac/SnapPro.app/Contents/MacOS
+          mkdir -p build_mac/SnapPro.app/Contents/Resources
+          mkdir -p build_mac/release_assets
+
+          cp native/macos/Info.plist build_mac/SnapPro.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" build_mac/SnapPro.app/Contents/Info.plist
+          cp native/macos/AppIcon.icns build_mac/SnapPro.app/Contents/Resources/AppIcon.icns
+          cp dist/SnapPro-Offline.html build_mac/SnapPro.app/Contents/Resources/index.html
+
+          clang -fobjc-arc -O2 -arch arm64 -arch x86_64 -framework Cocoa -framework WebKit \
+            native/snappro_macos.m -o build_mac/SnapPro.app/Contents/MacOS/SnapPro
+
+          codesign --force --deep --sign - build_mac/SnapPro.app
+
+          pkgbuild --root build_mac/SnapPro.app \
+            --identifier com.snappro.studio.mac \
+            --version "$VERSION" \
+            --install-location /Applications/SnapPro.app \
+            build_mac/release_assets/SnapPro-Installer.pkg
+
+          hdiutil create -volname "SnapPro Studio" \
+            -srcfolder build_mac/SnapPro.app \
+            -ov -format UDZO \
+            build_mac/release_assets/SnapPro-Installer.dmg
+
+          (cd build_mac && zip -r -q release_assets/SnapPro-Mac.zip SnapPro.app)
+          cp dist/SnapPro-Offline.html build_mac/release_assets/SnapPro-Offline.html
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${APP_VERSION}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" build_mac/release_assets/* --clobber
+          else
+            gh release create "$TAG" build_mac/release_assets/* \
+              --title "SnapPro Studio ${TAG}" \
+              --notes "${APP_NOTES}"
+          fi
