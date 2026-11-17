@@ -1900,7 +1900,7 @@ export default function App() {
   const updateComparison = useCallback(() => {
     if (!previewVideoRef.current || isWorking) return;
     const vid = previewVideoRef.current;
-    if (vid.readyState >= 2) {
+    if (vid.readyState >= 2 && !vid.seeking) {
       const res = renderComparisonPreview(vid, buildCurrentSettings());
       if (res) setCompareData(res);
     }
@@ -2602,8 +2602,8 @@ export default function App() {
                     const vh = vid.videoHeight;
                     const isPort = vh > vw;
                     // Force immediate hardware frame decode in WebKit when switching clips
-                    if (vid.currentTime < 0.02 && vid.duration > 0.2) {
-                      vid.currentTime = Math.min(0.4, vid.duration * 0.08);
+                    if (vid.currentTime === 0) {
+                      vid.currentTime = 0.001;
                     }
                     if (sizeMode === 'crop-2-3-auto' && vw > 0 && vh > 0) {
                       setOutputWidth(isPort ? vw : Math.round(vh * 1.5));
