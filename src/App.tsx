@@ -1741,19 +1741,6 @@ export default function App() {
     } else if (id !== 'custom') {
       setCropAspect('none');
     }
-
-    // ปรับเพดาน Limit File Size (KB) อัตโนมัติให้เหมาะกับจำนวนพิกเซลของแต่ละโหมด DX / FX
-    if (id === 'nikon-fx-l' || id === '8k') {
-      if (maxFileSizeKb < 6000) setMaxFileSizeKb(8000);
-    } else if (id === 'nikon-fx-m' || id === 'crop-4-3-max' || id === 'nikon-1-1') {
-      if (maxFileSizeKb < 3500) setMaxFileSizeKb(4500);
-    } else if (id === 'nikon-dx-l') {
-      if (maxFileSizeKb < 2500) setMaxFileSizeKb(3000);
-    } else if (id === 'nikon-dx-m' || id === 'nikon-fx-s' || id === '4k') {
-      if (maxFileSizeKb > 4000) setMaxFileSizeKb(2000);
-    } else if (id === 'crop-2-3-auto' || id === 'nikon-dx-s' || id === 'original' || id === 'fhd') {
-      if (maxFileSizeKb > 3000) setMaxFileSizeKb(1600);
-    }
     const firstReady = videos.find(v => v.width > 0);
     const isPortrait = firstReady ? firstReady.height > firstReady.width : false;
     const vw = firstReady ? firstReady.width : 1920;
@@ -3284,27 +3271,6 @@ export default function App() {
                         ⓘ
                       </span>
                     </div>
-
-                    {limitFileSize && (
-                      <div className="mini-pills" style={{ justifyContent: 'flex-end', marginTop: 2 }}>
-                        {[
-                          { kb: 1600, lbl: '1.6MB (DX)' },
-                          { kb: 3000, lbl: '3MB (DX-L)' },
-                          { kb: 4500, lbl: '4.5MB (FX-M)' },
-                          { kb: 8000, lbl: '8MB (FX-L)' },
-                        ].map(item => (
-                          <button
-                            key={item.kb}
-                            type="button"
-                            className={`mini-pill ${maxFileSizeKb === item.kb ? 'active' : ''}`}
-                            style={{ fontSize: '9.5px', padding: '2px 5px' }}
-                            onClick={() => setMaxFileSizeKb(item.kb)}
-                          >
-                            {item.lbl}
-                          </button>
-                        ))}
-                      </div>
-                    )}
                   </>
                 )}
 
