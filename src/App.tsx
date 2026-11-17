@@ -272,13 +272,13 @@ const ENHANCE_MODELS = [
     id: 'ai-super-res',
     labelEn: '🚀 AI Super-Res',
     labelTh: '🚀 AI Super-Res',
-    denoise: 28, sharpen: 52, clarity: 35, vibrance: 35, shadowLift: 15, sat: 112, con: 106, bri: 100,
+    denoise: 22, sharpen: 42, clarity: 6, vibrance: 14, shadowLift: 10, sat: 103, con: 100, bri: 100,
   },
   {
     id: 'standard',
     labelEn: '✨ Standard',
     labelTh: '✨ สมดุล',
-    denoise: 25, sharpen: 35, clarity: 25, vibrance: 35, shadowLift: 15, sat: 112, con: 105, bri: 100,
+    denoise: 25, sharpen: 35, clarity: 15, vibrance: 25, shadowLift: 12, sat: 106, con: 102, bri: 100,
   },
   {
     id: 'high-fidelity',
@@ -1263,16 +1263,16 @@ export default function App() {
   const [shapesExpanded, setShapesExpanded] = useState<boolean>(true);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
-  // Basic Enhancer Sliders (Default to AI Super-Res)
-  const [enhanceModel, setEnhanceModel] = useState<string>(() => savedInit.enhanceModelV2 || 'ai-super-res');
-  const [brightness, setBrightness] = useState<number>(() => savedInit.brightness ?? 100);
-  const [shadowLift, setShadowLift] = useState<number>(() => savedInit.shadowLift ?? 15);
-  const [contrast, setContrast] = useState<number>(() => savedInit.contrast ?? 106);
-  const [vibrance, setVibrance] = useState<number>(() => savedInit.vibrance ?? 35);
-  const [saturation, setSaturation] = useState<number>(() => savedInit.saturation ?? 112);
-  const [sharpen, setSharpen] = useState<number>(() => savedInit.sharpenV2 ?? 52);
-  const [clarity, setClarity] = useState<number>(() => savedInit.clarity ?? 35);
-  const [denoise, setDenoise] = useState<number>(() => savedInit.denoise ?? 28);
+  // Basic Enhancer Sliders (Default to AI Super-Res with natural camera contrast)
+  const [enhanceModel, setEnhanceModel] = useState<string>(() => savedInit.enhanceModelV3 || 'ai-super-res');
+  const [brightness, setBrightness] = useState<number>(() => savedInit.brightnessV3 ?? 100);
+  const [shadowLift, setShadowLift] = useState<number>(() => savedInit.shadowLiftV3 ?? 10);
+  const [contrast, setContrast] = useState<number>(() => savedInit.contrastV3 ?? 100);
+  const [vibrance, setVibrance] = useState<number>(() => savedInit.vibranceV3 ?? 14);
+  const [saturation, setSaturation] = useState<number>(() => savedInit.saturationV3 ?? 103);
+  const [sharpen, setSharpen] = useState<number>(() => savedInit.sharpenV3 ?? 42);
+  const [clarity, setClarity] = useState<number>(() => savedInit.clarityV3 ?? 6);
+  const [denoise, setDenoise] = useState<number>(() => savedInit.denoiseV3 ?? 22);
 
   // Lightroom Color Mixer & Color Grading
   const [colorMixer, setColorMixer] = useState<ColorMixerSettings>(
@@ -1323,16 +1323,23 @@ export default function App() {
           smartBestShot,
           skipStaticScene,
           enhanceModel,
-          enhanceModelV2: enhanceModel,
+          enhanceModelV3: enhanceModel,
           brightness,
+          brightnessV3: brightness,
           shadowLift,
+          shadowLiftV3: shadowLift,
           contrast,
+          contrastV3: contrast,
           vibrance,
+          vibranceV3: vibrance,
           saturation,
+          saturationV3: saturation,
           sharpen,
-          sharpenV2: sharpen,
+          sharpenV3: sharpen,
           clarity,
+          clarityV3: clarity,
           denoise,
+          denoiseV3: denoise,
           colorMixer,
           colorGrading,
           isWatermarkOpen,
@@ -1870,16 +1877,16 @@ export default function App() {
       setContrast(m.con);
       setBrightness(m.bri);
     }
+    if (m.id === 'original') {
+      setColorMixer(createDefaultColorMixer());
+      setColorGrading(createDefaultColorGrading());
+    }
   };
 
   const resetCurrentTab = () => {
-    if (toolTab === 'basic') {
-      handleSelectEnhanceModel(ENHANCE_MODELS[0]);
-    } else if (toolTab === 'mixer') {
-      setColorMixer(createDefaultColorMixer());
-    } else if (toolTab === 'grading') {
-      setColorGrading(createDefaultColorGrading());
-    }
+    handleSelectEnhanceModel(ENHANCE_MODELS[0]);
+    setColorMixer(createDefaultColorMixer());
+    setColorGrading(createDefaultColorGrading());
   };
 
   const updateHslChannel = (ch: HSLChannelKey, field: HSLMode, val: number) => {
@@ -1889,7 +1896,7 @@ export default function App() {
     }));
   };
 
-  // Live Comparison + Histogram Update
+  // Live Comparison + Histogram Update (Instant RAF scheduling)
   const updateComparison = useCallback(() => {
     if (!previewVideoRef.current || isWorking) return;
     const vid = previewVideoRef.current;
@@ -1900,8 +1907,8 @@ export default function App() {
   }, [isWorking, buildCurrentSettings]);
 
   useEffect(() => {
-    const tId = setTimeout(updateComparison, 30);
-    return () => clearTimeout(tId);
+    const rafId = requestAnimationFrame(updateComparison);
+    return () => cancelAnimationFrame(rafId);
   }, [updateComparison, activeVideo?.id]);
 
   // Native macOS + Browser Unified Directory Picker
@@ -2585,13 +2592,19 @@ export default function App() {
                 <video
                   ref={previewVideoRef}
                   src={previewUrl || undefined}
-                  controls={viewMode !== 'Crop'}
+                  controls={viewMode === 'Video'}
+                  preload="auto"
+                  playsInline
                   muted
                   onLoadedMetadata={e => {
                     const vid = e.currentTarget;
                     const vw = vid.videoWidth;
                     const vh = vid.videoHeight;
                     const isPort = vh > vw;
+                    // Force immediate hardware frame decode in WebKit when switching clips
+                    if (vid.currentTime < 0.02 && vid.duration > 0.2) {
+                      vid.currentTime = Math.min(0.4, vid.duration * 0.08);
+                    }
                     if (sizeMode === 'crop-2-3-auto' && vw > 0 && vh > 0) {
                       setOutputWidth(isPort ? vw : Math.round(vh * 1.5));
                       setOutputHeight(isPort ? Math.round(vw * 1.5) : vh);
@@ -2623,15 +2636,25 @@ export default function App() {
                   }}
                   onLoadedData={updateComparison}
                   onSeeked={updateComparison}
-                  style={{
-                    width: '100%',
-                    display: viewMode === 'Video' ? 'block' : 'none',
-                    maxHeight: 'calc(100vh - 180px)',
-                    height: '100%',
-                    borderRadius: 6,
-                    background: '#000',
-                    objectFit: 'contain',
-                  }}
+                  style={
+                    viewMode === 'Video'
+                      ? {
+                          width: '100%',
+                          maxHeight: 'calc(100vh - 180px)',
+                          height: '100%',
+                          borderRadius: 6,
+                          background: '#000',
+                          objectFit: 'contain',
+                        }
+                      : {
+                          position: 'absolute',
+                          width: 1,
+                          height: 1,
+                          opacity: 0,
+                          pointerEvents: 'none',
+                          zIndex: -1,
+                        }
+                  }
                 />
 
                 {viewMode === 'Crop' && activeVideo && (
