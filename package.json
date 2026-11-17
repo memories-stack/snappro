@@ -1,8 +1,8 @@
 {
   "name": "autobots-recode",
   "private": true,
-  "version": "2.6.0",
-  "releaseNotes": "AI Full-Body Head-to-Feet Symmetric Centering + Online OTA Auto-Update",
+  "version": "2.6.1",
+  "releaseNotes": "Faster Instant Preview Loading & Safe Frame Cache + AI Full-Body Symmetric Crop",
   "type": "module",
   "scripts": {
     "dev": "vite",

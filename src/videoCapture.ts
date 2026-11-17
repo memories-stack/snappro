@@ -1631,16 +1631,34 @@ export function computeHistogram(
   };
 }
 
+let cachedPreviewKey = '';
+let cachedPreviewAnalysis: ReturnType<typeof analyzeFrameSharpnessAndGray> | null = null;
+let cachedBeforeKey = '';
+let cachedBeforeUrl = '';
+
+export function invalidatePreviewCache() {
+  cachedPreviewKey = '';
+  cachedPreviewAnalysis = null;
+  cachedBeforeKey = '';
+  cachedBeforeUrl = '';
+}
+
 /**
- * สร้างภาพเปรียบเทียบ Before / After + กราฟ Histogram แบบสดๆ
+ * สร้างภาพเปรียบเทียบ Before / After + กราฟ Histogram แบบสดๆ (ปลอดภัยจากการ Seek 100%)
  */
 export function renderComparisonPreview(
   video: HTMLVideoElement,
   settings: CaptureSettings
 ): { beforeUrl: string; afterUrl: string; histogram: HistogramData } | null {
-  if (!video.videoWidth || !video.videoHeight) return null;
+  if (!video.videoWidth || !video.videoHeight || video.seeking || video.readyState < 2) return null;
 
-  const analysis = analyzeFrameSharpnessAndGray(video, video.videoWidth, video.videoHeight);
+  const frameKey = `${video.currentSrc || video.src}|${video.currentTime.toFixed(3)}|${video.videoWidth}x${video.videoHeight}`;
+  if (cachedPreviewKey !== frameKey || !cachedPreviewAnalysis) {
+    cachedPreviewAnalysis = analyzeFrameSharpnessAndGray(video, video.videoWidth, video.videoHeight);
+    cachedPreviewKey = frameKey;
+  }
+  const analysis = cachedPreviewAnalysis;
+
   const crop = getCropDimensions(
     video.videoWidth,
     video.videoHeight,
@@ -1652,17 +1670,22 @@ export function renderComparisonPreview(
     settings.skipOverflowCrop ?? false,
     settings.customCrop
   );
-  const maxDim = 820;
+  const maxDim = 680;
   const scale = Math.min(1, maxDim / Math.max(crop.cropW, crop.cropH));
   const w = Math.max(64, Math.round(crop.cropW * scale));
   const h = Math.max(64, Math.round(crop.cropH * scale));
 
-  // Before Canvas (Reused for zero-GC live preview)
-  if (!sharedBeforeCanvas) sharedBeforeCanvas = document.createElement('canvas');
-  sharedBeforeCanvas.width = w;
-  sharedBeforeCanvas.height = h;
-  const ctxBefore = sharedBeforeCanvas.getContext('2d')!;
-  ctxBefore.drawImage(video, crop.cropX, crop.cropY, crop.cropW, crop.cropH, 0, 0, w, h);
+  // Before Canvas (Cached per decoded frame + crop rect so slider/preset drags are instant)
+  const beforeKey = `${frameKey}|${crop.cropX},${crop.cropY},${crop.cropW},${crop.cropH}`;
+  if (cachedBeforeKey !== beforeKey || !cachedBeforeUrl) {
+    if (!sharedBeforeCanvas) sharedBeforeCanvas = document.createElement('canvas');
+    sharedBeforeCanvas.width = w;
+    sharedBeforeCanvas.height = h;
+    const ctxBefore = sharedBeforeCanvas.getContext('2d')!;
+    ctxBefore.drawImage(video, crop.cropX, crop.cropY, crop.cropW, crop.cropH, 0, 0, w, h);
+    cachedBeforeUrl = sharedBeforeCanvas.toDataURL('image/jpeg', 0.82);
+    cachedBeforeKey = beforeKey;
+  }
 
   // After Canvas (GPU Accelerated + Watermark)
   if (!sharedAfterCanvas) sharedAfterCanvas = document.createElement('canvas');
@@ -1678,8 +1701,8 @@ export function renderComparisonPreview(
   const histogram = computeHistogram(ctxAfter, w, h);
 
   return {
-    beforeUrl: sharedBeforeCanvas.toDataURL('image/jpeg', 0.88),
-    afterUrl: sharedAfterCanvas.toDataURL('image/jpeg', 0.88),
+    beforeUrl: cachedBeforeUrl,
+    afterUrl: sharedAfterCanvas.toDataURL('image/jpeg', 0.82),
     histogram,
   };
 }

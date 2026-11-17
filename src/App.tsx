@@ -26,9 +26,10 @@ import {
   formatDuration,
   dataUrlToBlob,
   renderComparisonPreview,
+  invalidatePreviewCache,
 } from './videoCapture';
 
-export const APP_VERSION = '2.6.0';
+export const APP_VERSION = '2.6.1';
 const DEFAULT_UPDATE_MANIFEST_URL = 'https://memories-stack.github.io/snappro/version.json';
 
 interface RemoteUpdateManifest {
@@ -1469,6 +1470,7 @@ export default function App() {
   // Only create 1 ObjectURL for the currently selected preview video!
   // Prevents creating hundreds of concurrent decoders/ObjectURLs when 200+ videos are added.
   useEffect(() => {
+    invalidatePreviewCache();
     if (!activeVideo?.file) {
       setPreviewUrl('');
       return;
@@ -2843,10 +2845,6 @@ export default function App() {
                     const vw = vid.videoWidth;
                     const vh = vid.videoHeight;
                     const isPort = vh > vw;
-                    // Force immediate hardware frame decode in WebKit when switching clips
-                    if (vid.currentTime === 0) {
-                      vid.currentTime = 0.001;
-                    }
                     if (sizeMode === 'crop-2-3-auto' && vw > 0 && vh > 0) {
                       setOutputWidth(isPort ? vw : Math.round(vh * 1.5));
                       setOutputHeight(isPort ? Math.round(vw * 1.5) : vh);
