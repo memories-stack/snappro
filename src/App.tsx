@@ -31,7 +31,7 @@ import {
   clearClipPreviewCache,
 } from './videoCapture';
 
-export const APP_VERSION = '2.6.5';
+export const APP_VERSION = '2.6.6';
 const DEFAULT_UPDATE_MANIFEST_URL = 'https://memories-stack.github.io/snappro/version.json';
 
 interface RemoteUpdateManifest {
@@ -1459,6 +1459,7 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef({ aborted: false });
+  const userSelectedPreviewRef = useRef(false);
   const pauseRef = useRef({ paused: false });
   const startTimeRef = useRef(0);
   const pauseStartRef = useRef(0);
@@ -1929,23 +1930,45 @@ export default function App() {
     }));
   };
 
-  // Live Comparison + Histogram Update (Instant RAF scheduling + 0ms LRU Clip Cache)
+  // Live Comparison + Histogram Update (Instant RAF scheduling + 0ms LRU Clip Cache + WebKit surface retry)
+  const previewRetryTimerRef = useRef<number | null>(null);
+  const previewRetryCountRef = useRef(0);
+
   const updateComparison = useCallback(() => {
-    if (isWorking) return;
+    if (previewRetryTimerRef.current !== null) {
+      window.clearTimeout(previewRetryTimerRef.current);
+      previewRetryTimerRef.current = null;
+    }
     const vid = previewVideoRef.current;
     if (vid && vid.readyState >= 2 && !vid.seeking) {
       const res = renderComparisonPreview(vid, buildCurrentSettings(), activeVideo?.id);
-      if (res) setCompareData(res);
+      if (res) {
+        previewRetryCountRef.current = 0;
+        setCompareData(res);
+        return;
+      }
+      // macOS WebKit hardware decoder may fire loadeddata/seeked a few ms before IOSurface paints
+      if (previewRetryCountRef.current < 15) {
+        previewRetryCountRef.current += 1;
+        previewRetryTimerRef.current = window.setTimeout(updateComparison, 60);
+      }
     } else if (activeVideo?.id) {
       const cached = renderCachedClipPreview(activeVideo.id, buildCurrentSettings());
       if (cached) setCompareData(cached);
     }
-  }, [isWorking, buildCurrentSettings, activeVideo?.id]);
+  }, [buildCurrentSettings, activeVideo?.id]);
 
   useEffect(() => {
+    previewRetryCountRef.current = 0;
     const rafId = requestAnimationFrame(updateComparison);
-    return () => cancelAnimationFrame(rafId);
-  }, [updateComparison, activeVideo?.id]);
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (previewRetryTimerRef.current !== null) {
+        window.clearTimeout(previewRetryTimerRef.current);
+        previewRetryTimerRef.current = null;
+      }
+    };
+  }, [updateComparison, activeVideo?.id, viewMode]);
 
   // Native macOS + Browser Unified Directory Picker
   const pickOutputDirectory = async (): Promise<FileSystemDirectoryHandle | null> => {
@@ -2140,6 +2163,7 @@ export default function App() {
     }
 
     setIsWorking(true);
+    userSelectedPreviewRef.current = false;
     setIsPaused(false);
     pauseRef.current = { paused: false };
     setIsDone(false);
@@ -2193,6 +2217,9 @@ export default function App() {
               ? `[${vi + 1}/${total} • ⚡${workerCount}x] ${item.name}`
               : `[${vi + 1}/${total}] ${item.name}`
           );
+          if (workerIdx === 0 && !userSelectedPreviewRef.current) {
+            setActiveVideoId(item.id);
+          }
           setVideos(prev => prev.map((v, idx) => (idx === vi ? { ...v, status: 'capturing' } : v)));
 
           const clipUrl = URL.createObjectURL(item.file);
@@ -2853,6 +2880,9 @@ export default function App() {
                   muted
                   onLoadedMetadata={e => {
                     const vid = e.currentTarget;
+                    if (vid.currentTime < 0.01 && vid.duration > 0.2) {
+                      vid.currentTime = Math.min(0.4, vid.duration * 0.08);
+                    }
                     const vw = vid.videoWidth;
                     const vh = vid.videoHeight;
                     const isPort = vh > vw;
@@ -2899,9 +2929,11 @@ export default function App() {
                         }
                       : {
                           position: 'absolute',
-                          width: 1,
-                          height: 1,
-                          opacity: 0,
+                          left: -9999,
+                          top: 0,
+                          width: 2,
+                          height: 2,
+                          opacity: 0.01,
                           pointerEvents: 'none',
                           zIndex: -1,
                         }
@@ -2962,7 +2994,10 @@ export default function App() {
                     <div
                       key={v.id}
                       className={`file-chip ${v.id === activeVideo?.id ? 'active' : ''} ${v.status === 'done' ? 'done' : ''} ${v.status === 'capturing' ? 'capturing' : ''}`}
-                      onClick={() => !isWorking && setActiveVideoId(v.id)}
+                      onClick={() => {
+                        userSelectedPreviewRef.current = true;
+                        setActiveVideoId(v.id);
+                      }}
                     >
                       <span className="chip-num">
                         {v.status === 'done' ? '✅' : v.status === 'capturing' ? '⏳' : i + 1}

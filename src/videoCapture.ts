@@ -1688,19 +1688,7 @@ function buildComparisonFromSource(
   const w = Math.max(64, Math.round(crop.cropW * scale));
   const h = Math.max(64, Math.round(crop.cropH * scale));
 
-  // Before Canvas (Cached per decoded frame + crop rect so slider/preset drags are instant)
-  const beforeKey = `${frameKey}|${crop.cropX},${crop.cropY},${crop.cropW},${crop.cropH}`;
-  if (cachedBeforeKey !== beforeKey || !cachedBeforeUrl) {
-    if (!sharedBeforeCanvas) sharedBeforeCanvas = document.createElement('canvas');
-    sharedBeforeCanvas.width = w;
-    sharedBeforeCanvas.height = h;
-    const ctxBefore = sharedBeforeCanvas.getContext('2d')!;
-    ctxBefore.drawImage(source, crop.cropX, crop.cropY, crop.cropW, crop.cropH, 0, 0, w, h);
-    cachedBeforeUrl = sharedBeforeCanvas.toDataURL('image/jpeg', 0.82);
-    cachedBeforeKey = beforeKey;
-  }
-
-  // After Canvas (GPU Accelerated + Watermark)
+  // After Canvas FIRST (GPU Accelerated + Watermark, also populates sharedCropCanvas cleanly)
   if (!sharedAfterCanvas) sharedAfterCanvas = document.createElement('canvas');
   sharedAfterCanvas.width = w;
   sharedAfterCanvas.height = h;
@@ -1709,6 +1697,27 @@ function buildComparisonFromSource(
     subjectAnchor: analysis.subjectCentroid,
   };
   renderEnhancedFrameToCanvas(source, srcW, srcH, sharedAfterCanvas, w, h, previewSettings);
+
+  // Before Canvas (Drawn from decoded sharedCropCanvas when cropped so Before & After are 100% frame-locked)
+  const beforeKey = `${frameKey}|${crop.cropX},${crop.cropY},${crop.cropW},${crop.cropH}`;
+  if (cachedBeforeKey !== beforeKey || !cachedBeforeUrl) {
+    if (!sharedBeforeCanvas) sharedBeforeCanvas = document.createElement('canvas');
+    sharedBeforeCanvas.width = w;
+    sharedBeforeCanvas.height = h;
+    const ctxBefore = sharedBeforeCanvas.getContext('2d', { willReadFrequently: true })!;
+    if (!crop.skippedCrop && sharedCropCanvas && sharedCropCanvas.width > 0 && sharedCropCanvas.height > 0) {
+      ctxBefore.drawImage(sharedCropCanvas, 0, 0, sharedCropCanvas.width, sharedCropCanvas.height, 0, 0, w, h);
+    } else {
+      ctxBefore.drawImage(source, crop.cropX, crop.cropY, crop.cropW, crop.cropH, 0, 0, w, h);
+    }
+    const sample = ctxBefore.getImageData(Math.floor(w * 0.25), Math.floor(h * 0.25), Math.max(1, Math.floor(w * 0.5)), 2).data;
+    let nonBlack = false;
+    for (let i = 0; i < sample.length; i += 4) {
+      if (sample[i] > 2 || sample[i + 1] > 2 || sample[i + 2] > 2) { nonBlack = true; break; }
+    }
+    cachedBeforeUrl = sharedBeforeCanvas.toDataURL('image/jpeg', 0.82);
+    if (nonBlack) cachedBeforeKey = beforeKey;
+  }
 
   const ctxAfter = sharedAfterCanvas.getContext('2d', { willReadFrequently: true })!;
   const histogram = computeHistogram(ctxAfter, w, h);
@@ -1745,12 +1754,31 @@ export function renderCachedClipPreview(
 /**
  * สร้างภาพเปรียบเทียบ Before / After + กราฟ Histogram แบบสดๆ (ปลอดภัยจากการ Seek 100%)
  */
+function isVideoFrameReadyNonBlack(video: HTMLVideoElement): boolean {
+  try {
+    if (!sharedBeforeCanvas) sharedBeforeCanvas = document.createElement('canvas');
+    sharedBeforeCanvas.width = 16;
+    sharedBeforeCanvas.height = 16;
+    const ctx = sharedBeforeCanvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return true;
+    ctx.drawImage(video, 0, 0, 16, 16);
+    const data = ctx.getImageData(0, 0, 16, 16).data;
+    for (let i = 0; i < data.length; i += 16) {
+      if (data[i] > 3 || data[i + 1] > 3 || data[i + 2] > 3) return true;
+    }
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 export function renderComparisonPreview(
   video: HTMLVideoElement,
   settings: CaptureSettings,
   clipId?: string
 ): { beforeUrl: string; afterUrl: string; histogram: HistogramData } | null {
   if (!video.videoWidth || !video.videoHeight || video.seeking || video.readyState < 2) return null;
+  if (!isVideoFrameReadyNonBlack(video)) return null;
 
   const frameKey = `${video.currentSrc || video.src}|${video.currentTime.toFixed(3)}|${video.videoWidth}x${video.videoHeight}`;
   if (cachedPreviewKey !== frameKey || !cachedPreviewAnalysis) {
