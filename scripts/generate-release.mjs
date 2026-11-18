@@ -29,6 +29,12 @@ const bannerSrc = path.join(root, 'SnapPro_Workflow_A4.png');
 if (fs.existsSync(bannerSrc)) {
   fs.copyFileSync(bannerSrc, path.join(distDir, 'SnapPro_Workflow_A4.png'));
 }
+for (const vidAsset of ['Snappro-Tutorial.mp4', 'Snappro-Cover.jpg']) {
+  const srcAsset = path.join(root, vidAsset);
+  if (fs.existsSync(srcAsset)) {
+    fs.copyFileSync(srcAsset, path.join(distDir, vidAsset));
+  }
+}
 
 // 2. Write manifest for OTA auto-update
 const dmgUrl = `https://github.com/memories-stack/snappro/releases/download/v${version}/SnapPro-Installer.dmg`;
@@ -199,6 +205,11 @@ const landingHtml = `<!doctype html>
       <a class="btn-secondary" href="https://github.com/memories-stack/snappro/releases/latest">📦 ดู Releases ทั้งหมด</a>
     </div>
     <a class="btn-secondary" style="width:100%;margin-bottom:22px;border-color:rgba(52,211,153,0.38);color:#6ee7b7;" href="./SnapPro_Workflow_A4.png" target="_blank">📋 เปิดดู / ดาวน์โหลดคู่มือทำงาน 5 ขั้นตอน (A4 Banner)</a>
+
+    <div class="feat-box" style="margin-bottom:22px;padding:14px;">
+      <div class="feat-title" style="margin-bottom:10px;">🎬 วิดีโอสอนขั้นตอนการทำงาน SnapPro</div>
+      <video controls playsinline preload="metadata" poster="./Snappro-Cover.jpg" src="./Snappro-Tutorial.mp4" style="width:100%;border-radius:12px;background:#000;display:block;"></video>
+    </div>
 
     <div class="features">
       <div class="feat-box">
