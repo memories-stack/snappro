@@ -3,7 +3,6 @@
   "private": true,
   "version": "2.6.6",
   "releaseNotes": "Fix Before/After live preview during clip switching & batch capture (macOS WebKit decode retry)",
-  "releaseNotes": "Fix Curb/Road Interference in Feet Detection for True Equal Top/Bottom Centering",
   "type": "module",
   "scripts": {
     "dev": "vite",
