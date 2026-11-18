@@ -31,7 +31,7 @@ import {
   clearClipPreviewCache,
 } from './videoCapture';
 
-export const APP_VERSION = '2.6.6';
+export const APP_VERSION = '2.6.7';
 const DEFAULT_UPDATE_MANIFEST_URL = 'https://memories-stack.github.io/snappro/version.json';
 
 interface RemoteUpdateManifest {
@@ -1667,9 +1667,12 @@ export default function App() {
 
   // Add Videos — Zero upfront decoder allocation! Supports 250+ or 1000+ videos instantaneously.
   const addVideos = useCallback((files: FileList | File[]) => {
-    const vFiles = Array.from(files).filter(
-      f => f.type.startsWith('video/') || /\.(mp4|mov|avi|webm|mkv|m4v|mts|m2ts|ts|flv|3gp|wmv|mpg|mpeg)$/i.test(f.name)
-    );
+    const vFiles = Array.from(files)
+      .filter(f => f.type.startsWith('video/') || /\.(mp4|mov|avi|webm|mkv|m4v|mts|m2ts|ts|flv|3gp|wmv|mpg|mpeg)$/i.test(f.name))
+      .sort((a, b) => {
+        const nameCmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+        return nameCmp !== 0 ? nameCmp : (a.lastModified || 0) - (b.lastModified || 0);
+      });
     if (vFiles.length === 0) return;
 
     const items: VideoItem[] = vFiles.map(f => ({
@@ -1689,7 +1692,10 @@ export default function App() {
     }));
 
     setVideos(prev => {
-      const next = [...prev, ...items];
+      const next = [...prev, ...items].sort((a, b) => {
+        const nameCmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+        return nameCmp !== 0 ? nameCmp : (a.file.lastModified || 0) - (b.file.lastModified || 0);
+      });
       if (!activeVideoId && next.length > 0) {
         setActiveVideoId(next[0].id);
       }
