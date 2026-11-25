@@ -1,8 +1,8 @@
 {
-  "version": "2.6.8",
+  "version": "2.6.9",
   "minNativeVersion": "2.6.0",
-  "releasedAt": "2026-11-25T03:22:46.530Z",
-  "notes": "Unified Neutral Graphite Pro Studio UI (easy on eyes, soft tactile borders, slim sliders) + JS Obfuscation",
+  "releasedAt": "2026-11-25T04:09:16.702Z",
+  "notes": "AI Face/Skin-Aware Smart Tone (Natural & Pro modes + per-frame Batch Auto with White-Shirt Highlight Guard)",
   "htmlUrl": "https://memories-stack.github.io/snappro/SnapPro-Offline.html",
   "dmgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.dmg",
   "pkgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.pkg",
