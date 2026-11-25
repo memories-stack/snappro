@@ -1,8 +1,8 @@
 {
-  "version": "2.6.10",
+  "version": "2.6.11",
   "minNativeVersion": "2.6.0",
-  "releasedAt": "2026-11-25T04:14:01.841Z",
-  "notes": "Pro Studio Clean UI (removed all text emojis) + Updated Pro Defaults (300 PPI, 4x Turbo, 1200 KB Limit, Overwrite)",
+  "releasedAt": "2026-11-25T04:16:30.725Z",
+  "notes": "Set Basic tab as default on launch + Pro Studio Clean UI & Defaults",
   "htmlUrl": "https://memories-stack.github.io/snappro/SnapPro-Offline.html",
   "dmgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.dmg",
   "pkgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.pkg",
