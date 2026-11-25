@@ -1,10 +1,10 @@
 {
   "version": "2.6.8",
   "minNativeVersion": "2.6.0",
-  "releasedAt": "2026-11-25T02:56:18.508Z",
+  "releasedAt": "2026-11-25T03:22:46.530Z",
   "notes": "Unified Neutral Graphite Pro Studio UI (easy on eyes, soft tactile borders, slim sliders) + JS Obfuscation",
   "htmlUrl": "https://memories-stack.github.io/snappro/SnapPro-Offline.html",
-  "dmgUrl": "https://github.com/memories-stack/snappro/releases/download/v2.6.8/SnapPro-Installer.dmg",
-  "pkgUrl": "https://github.com/memories-stack/snappro/releases/download/v2.6.8/SnapPro-Installer.pkg",
-  "zipUrl": "https://github.com/memories-stack/snappro/releases/download/v2.6.8/SnapPro-Mac.zip"
+  "dmgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.dmg",
+  "pkgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.pkg",
+  "zipUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Mac.zip"
 }
