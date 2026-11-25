@@ -1,8 +1,8 @@
 {
-  "version": "2.6.15",
+  "version": "2.6.16",
   "minNativeVersion": "2.6.0",
-  "releasedAt": "2026-11-25T07:11:42.225Z",
-  "notes": "Embedded SnapPro Pro Studio topbar logo + 30x faster Histogram GPU readback for smooth 60fps Retina 1440px slider grading",
+  "releasedAt": "2026-11-25T10:02:43.441Z",
+  "notes": "True Optical Still Engine (4:2:0->4:4:4 Chroma + 3-Band Luma Acutance + Spatial 3D Clarity) + Optional Real-ESRGAN CoreML (ANE) + Smart Tone Controls + Face-Zone Sharpness Guard",
   "htmlUrl": "https://memories-stack.github.io/snappro/SnapPro-Offline.html",
   "dmgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.dmg",
   "pkgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.pkg",
