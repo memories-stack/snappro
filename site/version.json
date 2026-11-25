@@ -1,8 +1,8 @@
 {
-  "version": "2.6.11",
+  "version": "2.6.12",
   "minNativeVersion": "2.6.0",
-  "releasedAt": "2026-11-25T04:16:30.725Z",
-  "notes": "Set Basic tab as default on launch + Pro Studio Clean UI & Defaults",
+  "releasedAt": "2026-11-25T04:23:09.555Z",
+  "notes": "Camera EXIF & Lens Telemetry Strip under Histogram (Nikon NCTG, Sony, Canon, Fujifilm, Apple iPhone)",
   "htmlUrl": "https://memories-stack.github.io/snappro/SnapPro-Offline.html",
   "dmgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.dmg",
   "pkgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.pkg",
