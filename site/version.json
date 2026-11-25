@@ -1,8 +1,10 @@
 {
-  "version": "2.6.7",
+  "version": "2.6.8",
   "minNativeVersion": "2.6.0",
-  "releasedAt": "2026-11-24T07:35:20.021Z",
-  "notes": "Sort imported video files naturally by name & timestamp (no random order)",
+  "releasedAt": "2026-11-25T02:56:18.508Z",
+  "notes": "Unified Neutral Graphite Pro Studio UI (easy on eyes, soft tactile borders, slim sliders) + JS Obfuscation",
   "htmlUrl": "https://memories-stack.github.io/snappro/SnapPro-Offline.html",
-  "dmgUrl": "https://github.com/memories-stack/snappro/releases/download/v2.6.7/SnapPro-Installer.dmg"
+  "dmgUrl": "https://github.com/memories-stack/snappro/releases/download/v2.6.8/SnapPro-Installer.dmg",
+  "pkgUrl": "https://github.com/memories-stack/snappro/releases/download/v2.6.8/SnapPro-Installer.pkg",
+  "zipUrl": "https://github.com/memories-stack/snappro/releases/download/v2.6.8/SnapPro-Mac.zip"
 }
