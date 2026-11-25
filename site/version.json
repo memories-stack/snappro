@@ -1,8 +1,8 @@
 {
-  "version": "2.6.9",
+  "version": "2.6.10",
   "minNativeVersion": "2.6.0",
-  "releasedAt": "2026-11-25T04:09:16.702Z",
-  "notes": "AI Face/Skin-Aware Smart Tone (Natural & Pro modes + per-frame Batch Auto with White-Shirt Highlight Guard)",
+  "releasedAt": "2026-11-25T04:14:01.841Z",
+  "notes": "Pro Studio Clean UI (removed all text emojis) + Updated Pro Defaults (300 PPI, 4x Turbo, 1200 KB Limit, Overwrite)",
   "htmlUrl": "https://memories-stack.github.io/snappro/SnapPro-Offline.html",
   "dmgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.dmg",
   "pkgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.pkg",
