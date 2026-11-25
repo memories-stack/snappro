@@ -1,8 +1,8 @@
 {
-  "version": "2.6.16",
+  "version": "2.6.17",
   "minNativeVersion": "2.6.0",
-  "releasedAt": "2026-11-25T10:02:43.441Z",
-  "notes": "True Optical Still Engine (4:2:0->4:4:4 Chroma + 3-Band Luma Acutance + Spatial 3D Clarity) + Optional Real-ESRGAN CoreML (ANE) + Smart Tone Controls + Face-Zone Sharpness Guard",
+  "releasedAt": "2026-11-25T10:21:29.898Z",
+  "notes": "Apple Vision Neural Engine (0 MB built-in: Face Quality blur/eyes-closed filter + 19-Pt Body Pose 2:3 Crop + Race Bib OCR filename) + AI Smart Tone 70% default",
   "htmlUrl": "https://memories-stack.github.io/snappro/SnapPro-Offline.html",
   "dmgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.dmg",
   "pkgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.pkg",
