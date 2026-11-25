@@ -1,8 +1,8 @@
 {
-  "version": "2.6.14",
+  "version": "2.6.15",
   "minNativeVersion": "2.6.0",
-  "releasedAt": "2026-11-25T04:59:38.804Z",
-  "notes": "Master AI Smart Tone (auto camera-brand Skin AI controlling Basic + HSL + 3-Way Grading) + Retina 1440px Sharp Preview + Watermark Scale up to 120%",
+  "releasedAt": "2026-11-25T07:11:42.225Z",
+  "notes": "Embedded SnapPro Pro Studio topbar logo + 30x faster Histogram GPU readback for smooth 60fps Retina 1440px slider grading",
   "htmlUrl": "https://memories-stack.github.io/snappro/SnapPro-Offline.html",
   "dmgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.dmg",
   "pkgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.pkg",
