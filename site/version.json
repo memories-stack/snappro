@@ -1,8 +1,8 @@
 {
-  "version": "2.6.13",
+  "version": "2.6.14",
   "minNativeVersion": "2.6.0",
-  "releasedAt": "2026-11-25T04:29:40.854Z",
-  "notes": "Upgraded AI 2:3/3:2 Full-Body Crop (bottom-up shoe detection + balanced headroom/footroom) + Multi-Brand 12-Camera EXIF & Codec Strip",
+  "releasedAt": "2026-11-25T04:59:38.804Z",
+  "notes": "Master AI Smart Tone (auto camera-brand Skin AI controlling Basic + HSL + 3-Way Grading) + Retina 1440px Sharp Preview + Watermark Scale up to 120%",
   "htmlUrl": "https://memories-stack.github.io/snappro/SnapPro-Offline.html",
   "dmgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.dmg",
   "pkgUrl": "https://github.com/memories-stack/snappro/releases/latest/download/SnapPro-Installer.pkg",
